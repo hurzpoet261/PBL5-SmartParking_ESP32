@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Thống kê doanh thu</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <h2>Doanh thu bãi xe thông minh</h2>
+    <div style="width: 600px;">
+        <canvas id="myChart"></canvas>
+    </div>
+
+    <script>
+        fetch('/api/stats')
+            .then(res => res.json())
+            .then(data => {
+                const ctx = document.getElementById('myChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: data.map(i => i.card_id), // Ví dụ hiển thị theo ID thẻ
+                        datasets: [{
+                            label: 'Doanh thu (VNĐ)',
+                            data: data.map(i => i.fee),
+                            backgroundColor: 'rgba(54, 162, 235, 0.2)'
+                        }]
+                    }
+                });
+            });
+    </script>
+</body>
+</html>
