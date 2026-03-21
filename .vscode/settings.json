@@ -1,0 +1,25 @@
+{
+    "python.languageServer": "Pylance",
+    "python.analysis.typeCheckingMode": "off",
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportMissingModuleSource": "none",
+        "reportOptionalMemberAccess": "none",
+        "reportUndefinedVariable": "none",
+        "reportGeneralTypeIssues": "none",
+        "reportCallIssue": "none",
+        "reportOptionalCall": "none",
+        "reportAttributeAccessIssue": "none",
+        "reportArgumentType": "none"
+    },
+    "python.terminal.activateEnvironment": false,
+    "micropico.openOnStart": true,
+    "python.analysis.typeshedPaths": [
+        "~/.micropico-stubs/included",
+        "./.micropico/stubs"
+    ],
+    "python.analysis.extraPaths": [
+        "~/.micropico-stubs/included",
+        "./.micropico/stubs"
+    ],
+    "python.analysis.stubPath": "./.micropico/stubs"
+}
