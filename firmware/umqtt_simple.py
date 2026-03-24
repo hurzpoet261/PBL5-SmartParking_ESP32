@@ -6,7 +6,7 @@ class MQTTException(Exception):
     pass
 
 class MQTTClient:
-    def __init__(self, client_id, server, port=1883, user=None, password=None, keepalive=0):
+    def __init__(self, client_id, server, port=1883, user="S House", password="Phuocbaotinh", keepalive=0):
         self.client_id = client_id
         self.server = server
         self.port = port

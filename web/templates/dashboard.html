@@ -1,32 +1,96 @@
 <!DOCTYPE html>
-<html>
+<html lang="vi">
 <head>
-    <title>Thống kê doanh thu</title>
+    <meta charset="UTF-8">
+    <title>Dashboard Bãi Xe</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        nav a { margin-right: 12px; text-decoration: none; color: #007BFF; }
+        nav a:hover { text-decoration: underline; }
+        .stat-card { display: inline-block; padding: 12px 16px; border: 1px solid #ddd; border-radius: 6px; margin-right: 10px; margin-bottom: 10px; }
+        .chart-box, .table-box { margin-top: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    </style>
 </head>
 <body>
-    <h2>Doanh thu bãi xe thông minh</h2>
-    <div style="width: 600px;">
-        <canvas id="myChart"></canvas>
+    <nav>
+        <a href="/">Trang chủ</a>
+        <a href="/dashboard">Thống kê</a>
+        <a href="/info">Thông tin</a>
+    </nav>
+
+    <h2>Dashboard Smart Parking</h2>
+
+    <div id="overview" class="stat-card">Đang tải...</div>
+    <div id="usage" class="stat-card">Đang tải...</div>
+    <div id="alert-count" class="stat-card">Đang tải...</div>
+
+    <div class="chart-box">
+        <h3>Biểu đồ doanh thu theo thẻ</h3>
+        <canvas id="revenueChart" height="130"></canvas>
+    </div>
+
+    <div class="chart-box">
+        <h3>Biểu đồ số lượt IN/OUT</h3>
+        <canvas id="usageChart" height="130"></canvas>
+    </div>
+
+    <div class="table-box">
+        <h3>Lịch sử bãi xe</h3>
+        <table id="historyTable">
+            <thead>
+                <tr><th>Thời gian</th><th>ID thẻ</th><th>Hành động</th><th>Phí</th></tr>
+            </thead>
+            <tbody>
+            </tbody>
+        </table>
     </div>
 
     <script>
-        fetch('/api/stats')
-            .then(res => res.json())
-            .then(data => {
-                const ctx = document.getElementById('myChart').getContext('2d');
-                new Chart(ctx, {
-                    type: 'bar',
-                    data: {
-                        labels: data.map(i => i.card_id), // Ví dụ hiển thị theo ID thẻ
-                        datasets: [{
-                            label: 'Doanh thu (VNĐ)',
-                            data: data.map(i => i.fee),
-                            backgroundColor: 'rgba(54, 162, 235, 0.2)'
-                        }]
-                    }
-                });
+        async function loadData() {
+            const stats = await fetch('/api/stats').then(r => r.json());
+            const revenue = await fetch('/api/v1/revenue').then(r => r.json());
+            const alerts = await fetch('/api/v1/alerts').then(r => r.json());
+
+            document.getElementById('overview').innerText = `Tổng doanh thu: ${revenue.total.toLocaleString()} VNĐ`;
+            document.getElementById('usage').innerText = `Lượt IN/OUT: ${Object.entries(revenue.usage).map(([k,v]) => `${k}: ${v}`).join(', ')}`;
+            document.getElementById('alert-count').innerText = `Cảnh báo gas: ${alerts.length}`;
+
+            // Biểu đồ doanh thu theo từng thẻ
+            const labels = stats.map(item => item.card_id);
+            const feeData = stats.map(item => item.fee || 0);
+            new Chart(document.getElementById('revenueChart'), {
+                type: 'bar',
+                data: { labels, datasets: [{ label: 'Doanh thu (VNĐ)', data: feeData, backgroundColor: 'rgba(54, 162, 235, 0.5)' }] },
+                options: { responsive: true }
             });
+
+            // Biểu đồ IN/OUT
+            const actions = stats.reduce((acc, item) => {
+                acc[item.action] = (acc[item.action] || 0) + 1;
+                return acc;
+            }, {});
+            new Chart(document.getElementById('usageChart'), {
+                type: 'line',
+                data: { labels: Object.keys(actions), datasets: [{ label: 'Số lượt', data: Object.values(actions), borderColor: 'rgba(255,99,132,1)', fill: false }] },
+                options: { responsive: true }
+            });
+
+            // Bảng lịch sử
+            const tbody = document.querySelector('#historyTable tbody');
+            tbody.innerHTML = '';
+            stats.slice().reverse().forEach(item => {
+                const tr = document.createElement('tr');
+                const ts = new Date(item.timestamp).toLocaleString();
+                tr.innerHTML = `<td>${ts}</td><td>${item.card_id}</td><td>${item.action}</td><td>${item.fee}</td>`;
+                tbody.appendChild(tr);
+            });
+        }
+
+        loadData();
+        setInterval(loadData, 5000);
     </script>
 </body>
 </html>

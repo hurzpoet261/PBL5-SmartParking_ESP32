@@ -8,7 +8,6 @@ db = Database()
 def on_connect(client, userdata, flags, rc, properties=None):
     if rc == 0:
         print("✅ Đã kết nối thành công với MQTT Broker!")
-        # Đăng ký các topic từ ESP32 gửi lên
         client.subscribe("pbl5/parking/scan")
         client.subscribe("pbl5/parking/alert")
     else:
@@ -18,13 +17,13 @@ def on_connect(client, userdata, flags, rc, properties=None):
 def on_message(client, userdata, msg):
     payload = msg.payload.decode()
     print(f"📩 Topic: {msg.topic} | Nội dung: {payload}")
-    
+
     if msg.topic == "pbl5/parking/scan":
-        # Lưu ID thẻ vào MongoDB
-        db.log_entry(payload)
+        db.log_entry(payload, action="IN", fee=5000)
         print(f"💾 Đã lưu thẻ {payload} vào MongoDB.")
-    
-    if msg.topic == "pbl5/parking/alert":
+
+    elif msg.topic == "pbl5/parking/alert":
+        db.log_alert(payload)
         print(f"⚠️ CẢNH BÁO KHẨN CẤP: {payload}")
 
 # Khởi tạo client với API VERSION 2
@@ -35,6 +34,4 @@ client.on_message = on_message
 # Kết nối đến Broker (Sử dụng HiveMQ công cộng để test)
 print("🔗 Đang kết nối đến Broker...")
 client.connect("broker.hivemq.com", 1883, 60)
-
-# Vòng lặp giữ kết nối
 client.loop_forever()
