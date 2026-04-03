@@ -1,32 +1,60 @@
+# =========================
+# PBL5-SmartParking_ESP32
+# Root .gitignore
+# =========================
+
+# Secrets / local config
 config.py
+.env
+.env.*
+!.env.example
 
 # Python
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+*.so
 .python-version
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-.venv/
+.coverage
+htmlcov/
 venv/
+.venv/
+env/
+ENV/
 
-# Node
+# Node / frontend
 node_modules/
 dist/
 build/
+.vite/
+*.tsbuildinfo
 
-# Env files
-.env
-.env.*
-!.env.example
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# OS / editor
+# IDE / OS
 .DS_Store
+Thumbs.db
 .vscode/
 .idea/
 
 # Local git repos accidentally created inside subfolders
 backend/.git/
 frontend/.git/
+
+# Common generated folders inside this project
+backend/**/__pycache__/
+backend/**/*.pyc
+server/**/__pycache__/
+server/**/*.pyc
+frontend/node_modules/
+frontend/dist/
+frontend/build/
