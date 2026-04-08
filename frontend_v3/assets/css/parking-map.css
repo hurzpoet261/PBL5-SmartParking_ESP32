@@ -1,0 +1,38 @@
+/* Parking Map Specific Styles */
+
+.legend-box {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    border: 2px solid #E5E7EB;
+}
+
+.legend-box.available {
+    background: #D1FAE5;
+    border-color: #10B981;
+}
+
+.legend-box.occupied {
+    background: #FEE2E2;
+    border-color: #EF4444;
+}
+
+.legend-box.reserved {
+    background: #FEF3C7;
+    border-color: #F59E0B;
+}
+
+.legend-box.maintenance {
+    background: #E5E7EB;
+    border-color: #9CA3AF;
+}
+
+.parking-grid {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+}
+
+@media (max-width: 768px) {
+    .parking-grid {
+        grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    }
+}

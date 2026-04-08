@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lịch sử ra vào - Smart Parking</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="../assets/css/main.css">
+</head>
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h4><i class="bi bi-car-front-fill"></i> Smart Parking</h4>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="../index.html" class="nav-link">
+                <i class="bi bi-speedometer2"></i> Dashboard
+            </a>
+            <a href="register-card.html" class="nav-link">
+                <i class="bi bi-credit-card-2-front"></i> Đăng ký thẻ
+            </a>
+            <a href="customers.html" class="nav-link">
+                <i class="bi bi-people"></i> Khách hàng
+            </a>
+            <a href="vehicles.html" class="nav-link">
+                <i class="bi bi-car-front"></i> Xe
+            </a>
+            <a href="parking-map.html" class="nav-link">
+                <i class="bi bi-grid-3x3"></i> Map chỗ đỗ
+            </a>
+            <a href="packages.html" class="nav-link">
+                <i class="bi bi-box-seam"></i> Gói cước
+            </a>
+            <a href="sessions.html" class="nav-link active">
+                <i class="bi bi-clock-history"></i> Lịch sử
+            </a>
+            <a href="revenue.html" class="nav-link">
+                <i class="bi bi-graph-up"></i> Doanh thu
+            </a>
+        </nav>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="header">
+            <h2><i class="bi bi-clock-history"></i> Lịch sử ra vào</h2>
+        </div>
+
+        <!-- Filter -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <input type="text" class="form-control" id="searchInput" placeholder="Tìm theo biển số...">
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select" id="statusFilter">
+                            <option value="">Tất cả trạng thái</option>
+                            <option value="active">Đang đỗ</option>
+                            <option value="completed">Đã ra</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <input type="date" class="form-control" id="dateFilter">
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-primary w-100" onclick="loadSessions()">
+                            <i class="bi bi-search"></i> Tìm kiếm
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sessions Table -->
+        <div class="card">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Mã phiên</th>
+                                <th>Khách hàng</th>
+                                <th>Biển số</th>
+                                <th>Chỗ đỗ</th>
+                                <th>Thời gian vào</th>
+                                <th>Thời gian ra</th>
+                                <th>Phí</th>
+                                <th>Trạng thái</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sessionsTable">
+                            <tr>
+                                <td colspan="8" class="text-center">Đang tải...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../assets/js/api.js"></script>
+    <script>
+        async function loadSessions() {
+            try {
+                const search = document.getElementById('searchInput').value;
+                const status = document.getElementById('statusFilter').value;
+                const date = document.getElementById('dateFilter').value;
+                
+                let url = '/sessions';
+                const params = [];
+                if (search) params.push(`plate_number=${encodeURIComponent(search)}`);
+                if (status) params.push(`status=${status}`);
+                if (date) params.push(`date=${date}`);
+                if (params.length > 0) url += '?' + params.join('&');
+                
+                const result = await api.get(url);
+                const tbody = document.getElementById('sessionsTable');
+                
+                if (!result.success || !result.data || result.data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8" class="text-center">Không có dữ liệu</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = result.data.map(session => `
+                    <tr>
+                        <td><code>${session.session_id}</code></td>
+                        <td>${session.customer_name || 'N/A'}</td>
+                        <td><strong>${session.plate_number || 'N/A'}</strong></td>
+                        <td><span class="badge bg-info">${session.slot_number || 'N/A'}</span></td>
+                        <td>${formatDateTime(session.check_in_time)}</td>
+                        <td>${session.check_out_time ? formatDateTime(session.check_out_time) : '-'}</td>
+                        <td>${formatCurrency(session.fee || 0)}</td>
+                        <td><span class="badge bg-${session.status === 'active' ? 'success' : 'secondary'}">${session.status === 'active' ? 'Đang đỗ' : 'Đã ra'}</span></td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading sessions:', error);
+                showToast('Không thể tải lịch sử', 'danger');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', loadSessions);
+    </script>
+</body>
+</html>
