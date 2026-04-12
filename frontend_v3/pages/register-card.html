@@ -119,7 +119,7 @@
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label">&nbsp;</label>
-                                    <button type="button" class="btn btn-secondary w-100" onclick="scanCard()">
+                                    <button type="button" class="btn btn-secondary w-100" id="scanCardBtn" onclick="toggleAutoFetch()">
                                         <i class="bi bi-upc-scan"></i> Quét thẻ
                                     </button>
                                 </div>
@@ -200,6 +200,74 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../assets/js/api.js"></script>
     <script>
+        // Auto-fetch latest scanned card
+        let autoFetchInterval = null;
+        let isAutoFetching = false;
+        let fetchAttempts = 0;
+        const MAX_ATTEMPTS = 60; // 60 attempts * 2 seconds = 2 minutes
+        
+        function startAutoFetch() {
+            if (autoFetchInterval) return;
+            
+            isAutoFetching = true;
+            fetchAttempts = 0;
+            
+            const btn = document.getElementById('scanCardBtn');
+            btn.innerHTML = '<i class="bi bi-stop-circle"></i> Dừng quét';
+            btn.classList.remove('btn-secondary');
+            btn.classList.add('btn-danger');
+            
+            showToast('Đang chờ quét thẻ... Vui lòng quét thẻ RFID', 'info');
+            
+            autoFetchInterval = setInterval(async () => {
+                fetchAttempts++;
+                console.log(`Checking for scanned card... (attempt ${fetchAttempts}/${MAX_ATTEMPTS})`);
+                
+                try {
+                    const result = await api.get('/rfid/latest-scan');
+                    console.log('Latest scan result:', result);
+                    
+                    if (result && result.success && result.card_uid) {
+                        document.getElementById('cardUid').value = result.card_uid;
+                        showToast('✅ Đã quét thẻ: ' + result.card_uid, 'success');
+                        stopAutoFetch();
+                    } else if (fetchAttempts >= MAX_ATTEMPTS) {
+                        showToast('Hết thời gian chờ. Vui lòng thử lại.', 'warning');
+                        stopAutoFetch();
+                    }
+                } catch (error) {
+                    console.error('Auto-fetch error:', error);
+                    if (fetchAttempts >= 3) {
+                        showToast('Lỗi kết nối backend. Kiểm tra backend đã chạy chưa.', 'danger');
+                        stopAutoFetch();
+                    }
+                }
+            }, 2000); // Check every 2 seconds
+        }
+        
+        function stopAutoFetch() {
+            if (autoFetchInterval) {
+                clearInterval(autoFetchInterval);
+                autoFetchInterval = null;
+            }
+            isAutoFetching = false;
+            fetchAttempts = 0;
+            
+            const btn = document.getElementById('scanCardBtn');
+            btn.innerHTML = '<i class="bi bi-upc-scan"></i> Quét thẻ';
+            btn.classList.remove('btn-danger');
+            btn.classList.add('btn-secondary');
+        }
+        
+        function toggleAutoFetch() {
+            if (isAutoFetching) {
+                stopAutoFetch();
+                showToast('Đã dừng quét thẻ', 'info');
+            } else {
+                startAutoFetch();
+            }
+        }
+        
         function selectPackage(type) {
             document.querySelectorAll('.package-card').forEach(card => {
                 card.classList.remove('border-primary');
@@ -208,28 +276,37 @@
             document.querySelector(`input[value="${type}"]`).checked = true;
         }
 
-        function scanCard() {
-            alert('Chức năng quét thẻ sẽ được tích hợp với thiết bị RFID');
-        }
-
         document.getElementById('registerForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Đang xử lý...';
+            
             try {
+                // Validate card UID
+                const cardUid = document.getElementById('cardUid').value.trim();
+                if (!cardUid) {
+                    throw new Error('Vui lòng nhập hoặc quét mã thẻ RFID');
+                }
+                
                 // Create customer
                 const customerData = {
-                    name: document.getElementById('customerName').value,
-                    phone: document.getElementById('customerPhone').value,
-                    email: document.getElementById('customerEmail').value || null,
-                    id_card: document.getElementById('customerIdCard').value || null,
-                    address: document.getElementById('customerAddress').value || null,
-                    customer_type: 'walk_in'
+                    name: document.getElementById('customerName').value.trim(),
+                    phone: document.getElementById('customerPhone').value.trim(),
+                    email: document.getElementById('customerEmail').value.trim() || null,
+                    id_card: document.getElementById('customerIdCard').value.trim() || null,
+                    address: document.getElementById('customerAddress').value.trim() || null,
+                    customer_type: 'walk_in',
+                    notes: null
                 };
                 
+                console.log('Creating customer:', customerData);
                 const customerResult = await api.post('/customers', customerData);
+                console.log('Customer result:', customerResult);
                 
-                if (!customerResult.success) {
-                    throw new Error('Không thể tạo khách hàng');
+                if (!customerResult || !customerResult.success) {
+                    throw new Error(customerResult?.error || 'Không thể tạo khách hàng');
                 }
                 
                 const customerId = customerResult.data.customer_id;
@@ -237,27 +314,38 @@
                 // Create vehicle
                 const vehicleData = {
                     customer_id: customerId,
-                    plate_number: document.getElementById('vehiclePlate').value,
+                    plate_number: document.getElementById('vehiclePlate').value.trim(),
                     vehicle_type: document.getElementById('vehicleType').value,
-                    brand: document.getElementById('vehicleBrand').value || null,
-                    model: document.getElementById('vehicleModel').value || null,
-                    color: document.getElementById('vehicleColor').value || null
+                    brand: document.getElementById('vehicleBrand').value.trim() || null,
+                    model: document.getElementById('vehicleModel').value.trim() || null,
+                    color: document.getElementById('vehicleColor').value.trim() || null
                 };
                 
+                console.log('Creating vehicle:', vehicleData);
                 const vehicleResult = await api.post('/vehicles', vehicleData);
+                console.log('Vehicle result:', vehicleResult);
                 
-                if (!vehicleResult.success) {
-                    throw new Error('Không thể tạo xe');
+                if (!vehicleResult || !vehicleResult.success) {
+                    throw new Error(vehicleResult?.error || 'Không thể tạo xe');
                 }
                 
                 const vehicleId = vehicleResult.data.vehicle_id;
                 
                 // Create RFID card
                 const cardData = {
-                    card_uid: document.getElementById('cardUid').value,
+                    card_uid: cardUid,
                     customer_id: customerId,
-                    vehicle_id: vehicleId
+                    vehicle_id: vehicleId,
+                    status: 'active'
                 };
+                
+                console.log('Creating RFID card:', cardData);
+                const cardResult = await api.post('/rfid/register-card', cardData);
+                console.log('Card result:', cardResult);
+                
+                if (!cardResult || !cardResult.success) {
+                    throw new Error(cardResult?.error || 'Không thể đăng ký thẻ');
+                }
                 
                 // Create package if not per_use
                 const packageType = document.querySelector('input[name="package"]:checked').value;
@@ -267,17 +355,35 @@
                         vehicle_id: vehicleId,
                         package_type: packageType
                     };
-                    await api.post('/packages', packageData);
+                    console.log('Creating package:', packageData);
+                    const pkgResult = await api.post('/packages', packageData);
+                    console.log('Package result:', pkgResult);
                 }
                 
-                showToast('Đăng ký thành công!', 'success');
+                // Clear the pending scan
+                await api.delete('/rfid/latest-scan');
+                
+                showToast('✅ Đăng ký thành công!', 'success');
                 setTimeout(() => {
                     window.location.href = 'customers.html';
                 }, 1500);
                 
             } catch (error) {
-                console.error('Error:', error);
-                showToast('Đăng ký thất bại: ' + error.message, 'danger');
+                console.error('Registration error:', error);
+                showToast('❌ Đăng ký thất bại: ' + (error.message || error), 'danger');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-check-circle"></i> Đăng ký';
+            }
+        });
+        
+        // Stop auto-fetch when leaving page
+        window.addEventListener('beforeunload', stopAutoFetch);
+        
+        // Check backend on load
+        document.addEventListener('DOMContentLoaded', async () => {
+            const isBackendRunning = await checkBackend();
+            if (!isBackendRunning) {
+                showToast('⚠️ Backend chưa chạy! Vui lòng chạy: python -m app.main', 'danger');
             }
         });
     </script>

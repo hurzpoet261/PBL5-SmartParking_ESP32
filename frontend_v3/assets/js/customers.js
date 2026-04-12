@@ -1,9 +1,11 @@
 // Customers Management
 
 async function loadCustomers() {
+    const tbody = document.getElementById('customersTable');
+    
     try {
-        const search = document.getElementById('searchInput').value;
-        const type = document.getElementById('typeFilter').value;
+        const search = document.getElementById('searchInput')?.value || '';
+        const type = document.getElementById('typeFilter')?.value || '';
         
         let url = '/customers';
         const params = [];
@@ -11,10 +13,16 @@ async function loadCustomers() {
         if (type) params.push(`customer_type=${type}`);
         if (params.length > 0) url += '?' + params.join('&');
         
+        console.log('Loading customers from:', url);
         const result = await api.get(url);
-        const tbody = document.getElementById('customersTable');
+        console.log('Customers result:', result);
         
-        if (!result.success || !result.data || result.data.length === 0) {
+        if (!result || !result.success) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">Lỗi tải dữ liệu. Kiểm tra backend đã chạy chưa.</td></tr>';
+            return;
+        }
+        
+        if (!result.data || result.data.length === 0) {
             tbody.innerHTML = '<tr><td colspan="8" class="text-center">Không có dữ liệu</td></tr>';
             return;
         }

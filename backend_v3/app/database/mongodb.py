@@ -19,8 +19,25 @@ class MongoDB:
     async def connect_db(cls):
         """Connect to MongoDB"""
         try:
-            logger.info(f"Connecting to MongoDB: {settings.MONGODB_URL}")
-            cls.client = AsyncIOMotorClient(settings.MONGODB_URL)
+            # Mask password in log
+            masked_url = settings.MONGODB_URL
+            if '@' in masked_url:
+                parts = masked_url.split('@')
+                if ':' in parts[0]:
+                    user_pass = parts[0].split('//')[-1]
+                    user = user_pass.split(':')[0]
+                    masked_url = masked_url.replace(user_pass, f"{user}:****")
+            
+            logger.info(f"Connecting to MongoDB: {masked_url}")
+            
+            # Create client - SSL params already in connection string
+            cls.client = AsyncIOMotorClient(
+                settings.MONGODB_URL,
+                serverSelectionTimeoutMS=30000,
+                connectTimeoutMS=20000,
+                socketTimeoutMS=20000
+            )
+            
             cls.db = cls.client[settings.MONGODB_DB_NAME]
             
             # Test connection
@@ -32,6 +49,12 @@ class MongoDB:
             
         except Exception as e:
             logger.error(f"❌ MongoDB connection error: {e}")
+            logger.error("💡 Troubleshooting tips:")
+            logger.error("   1. Check your internet connection")
+            logger.error("   2. Verify MongoDB Atlas credentials")
+            logger.error("   3. Check if IP is whitelisted in MongoDB Atlas")
+            logger.error("   4. Try using local MongoDB: mongodb://localhost:27017")
+            logger.error("   5. Update .env: MONGODB_URL=mongodb://localhost:27017")
             raise
     
     @classmethod

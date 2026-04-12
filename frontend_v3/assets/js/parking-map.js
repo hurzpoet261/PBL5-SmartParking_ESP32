@@ -2,10 +2,22 @@
 
 async function loadParkingMap() {
     try {
+        console.log('Loading parking map...');
         const result = await api.get('/slots/map');
+        console.log('Parking map result:', result);
         
-        if (!result.success || !result.data) {
-            showToast('Không thể tải map chỗ đỗ', 'danger');
+        if (!result || !result.success) {
+            showToast('Không thể tải map chỗ đỗ. Kiểm tra backend đã chạy chưa.', 'danger');
+            // Set default values
+            document.getElementById('availableCount').textContent = '0';
+            document.getElementById('occupiedCount').textContent = '0';
+            document.getElementById('reservedCount').textContent = '0';
+            document.getElementById('maintenanceCount').textContent = '0';
+            return;
+        }
+        
+        if (!result.data || result.data.length === 0) {
+            showToast('Chưa có chỗ đỗ nào. Vui lòng khởi tạo dữ liệu.', 'warning');
             return;
         }
         

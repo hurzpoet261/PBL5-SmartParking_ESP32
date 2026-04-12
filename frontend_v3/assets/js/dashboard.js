@@ -17,7 +17,7 @@ async function loadStats() {
     try {
         const stats = await api.get('/stats/dashboard');
         
-        if (stats.success) {
+        if (stats && stats.success && stats.data) {
             document.getElementById('totalCustomers').textContent = stats.data.total_customers || 0;
             document.getElementById('activeSessions').textContent = stats.data.active_sessions || 0;
             document.getElementById('availableSlots').textContent = stats.data.available_slots || 0;
@@ -28,28 +28,46 @@ async function loadStats() {
             const occupied = stats.data.occupied_slots || 0;
             const rate = Math.round((occupied / total) * 100);
             document.getElementById('occupancyRate').textContent = rate + '%';
+        } else {
+            console.error('Stats API returned error:', stats);
+            // Set default values
+            document.getElementById('totalCustomers').textContent = '0';
+            document.getElementById('activeSessions').textContent = '0';
+            document.getElementById('availableSlots').textContent = '0';
+            document.getElementById('todayRevenue').textContent = '0đ';
+            document.getElementById('occupancyRate').textContent = '0%';
         }
     } catch (error) {
         console.error('Error loading stats:', error);
-        showToast('Không thể tải thống kê', 'danger');
+        showToast('Không thể tải thống kê. Kiểm tra backend đã chạy chưa.', 'danger');
     }
 }
 
 // Load charts
 async function loadCharts() {
     try {
+        // Revenue chart - last 7 days
         const revenueData = await api.get('/stats/revenue?days=7');
         
-        if (revenueData.success) {
-            createRevenueChart(revenueData.data);
+        if (revenueData && revenueData.success && revenueData.data && revenueData.data.chart_data) {
+            const labels = revenueData.data.chart_data.map(d => d.date);
+            const values = revenueData.data.chart_data.map(d => d.revenue);
+            createRevenueChart({ labels, values });
+        } else {
+            createRevenueChart({ labels: [], values: [] });
         }
         
+        // Occupancy chart
         const occupancyData = await api.get('/stats/occupancy');
-        if (occupancyData.success) {
+        if (occupancyData && occupancyData.success && occupancyData.data) {
             createOccupancyChart(occupancyData.data);
+        } else {
+            createOccupancyChart({ occupied: 0, available: 20 });
         }
     } catch (error) {
         console.error('Error loading charts:', error);
+        createRevenueChart({ labels: [], values: [] });
+        createOccupancyChart({ occupied: 0, available: 20 });
     }
 }
 
@@ -129,25 +147,25 @@ async function loadActiveSessions() {
         const sessions = await api.get('/sessions?status=active');
         const tbody = document.getElementById('activeSessionsTable');
         
-        if (!sessions.success || !sessions.data || sessions.data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Không có xe đang đỗ</td></tr>';
+        if (!sessions || !sessions.success || !sessions.data || sessions.data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Không có xe đang đỗ</td></tr>';
             return;
         }
         
         tbody.innerHTML = sessions.data.map(session => `
             <tr>
-                <td><code>${session.session_id}</code></td>
+                <td><code>${session.session_id || 'N/A'}</code></td>
                 <td>${session.customer_name || 'N/A'}</td>
                 <td><strong>${session.plate_number || 'N/A'}</strong></td>
-                <td><span class="badge bg-info">${session.slot_number || 'N/A'}</span></td>
-                <td>${formatDateTime(session.check_in_time)}</td>
-                <td>${calculateDuration(session.check_in_time)}</td>
+                <td><span class="badge bg-info">${session.slot_number || session.slot_id || 'N/A'}</span></td>
+                <td>${formatDateTime(session.entry_time || session.check_in_time)}</td>
+                <td>${calculateDuration(session.entry_time || session.check_in_time)}</td>
             </tr>
         `).join('');
     } catch (error) {
         console.error('Error loading sessions:', error);
-        document.getElementById('activeSessionsTable').innerHTML = 
-            '<tr><td colspan="6" class="text-center text-danger">Lỗi tải dữ liệu</td></tr>';
+        const tbody = document.getElementById('activeSessionsTable');
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Lỗi tải dữ liệu. Kiểm tra backend.</td></tr>';
     }
 }
 

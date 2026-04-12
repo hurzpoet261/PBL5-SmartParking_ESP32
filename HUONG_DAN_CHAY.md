@@ -19,15 +19,34 @@
 
 ### Bước 2: Cấu hình Backend
 
-Tạo file `backend_v3/.env`:
-```env
-MONGODB_URL=mongodb://localhost:27017
-DATABASE_NAME=smart_parking_v3
-API_HOST=0.0.0.0
-API_PORT=8000
+**Chọn MongoDB:**
+
+**Cách 1: MongoDB Local**
+```bash
+cd backend_v3
+copy .env.local .env
 ```
 
-### Bước 3: Chạy Backend
+**Cách 2: MongoDB Atlas**
+```bash
+cd backend_v3
+copy .env.atlas .env
+```
+
+**Kiểm tra kết nối:**
+```bash
+python check_mongodb.py
+```
+
+### Bước 3: Khởi tạo dữ liệu
+
+```bash
+python init_data.py
+```
+
+Script này sẽ tạo 20 chỗ đỗ xe (A01-A20).
+
+### Bước 4: Chạy Backend
 
 ```bash
 cd backend_v3
@@ -37,7 +56,7 @@ python -m app.main
 
 ✅ Backend chạy tại: http://localhost:8000
 
-### Bước 4: Chạy Frontend
+### Bước 5: Chạy Frontend
 
 **Cách 1: Mở trực tiếp**
 - Double-click file `frontend_v3/index.html`
@@ -67,15 +86,12 @@ Bạn sẽ thấy Dashboard với:
 
 ### 3. Test API đầu tiên
 
-**Khởi tạo chỗ đỗ xe:**
-```bash
-curl -X POST http://localhost:8000/api/v1/slots/initialize?total_slots=20
-```
-
 **Kiểm tra map chỗ đỗ:**
 ```bash
 curl http://localhost:8000/api/v1/slots/map
 ```
+
+Bạn sẽ thấy 20 chỗ đỗ đã được tạo từ `init_data.py`.
 
 ---
 
@@ -313,13 +329,14 @@ curl -X POST http://localhost:8000/api/v1/vehicles \
 ## 🎯 CHECKLIST KHỞI ĐỘNG
 
 - [ ] MongoDB đã cài và chạy
-- [ ] File `.env` đã tạo trong `backend_v3/`
+- [ ] File `.env` đã tạo: `copy .env.local .env` hoặc `copy .env.atlas .env`
+- [ ] Kiểm tra kết nối: `python check_mongodb.py`
 - [ ] Dependencies đã cài: `pip install -r requirements.txt`
+- [ ] Khởi tạo dữ liệu: `python init_data.py`
 - [ ] Backend chạy thành công: http://localhost:8000/docs
 - [ ] Frontend mở được: `index.html`
 - [ ] API test thành công: `/health` endpoint
-- [ ] Đã khởi tạo parking slots
-- [ ] Đã tạo ít nhất 1 khách hàng test
+- [ ] Dashboard hiển thị dữ liệu đúng
 
 ---
 

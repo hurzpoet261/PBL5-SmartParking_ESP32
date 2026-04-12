@@ -115,8 +115,23 @@ async def get_revenue_stats(
 @router.get("/dashboard")
 async def get_dashboard_stats(db: AsyncIOMotorDatabase = Depends(get_database)):
     """Get dashboard statistics"""
-    # Get general stats
-    general_stats = await get_stats(db)
+    # Count documents
+    total_customers = await db.customers.count_documents({})
+    total_vehicles = await db.vehicles.count_documents({})
+    active_sessions = await db.sessions.count_documents({"status": "in_progress"})
+    
+    # Get today's revenue
+    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_transactions = await db.transactions.find({
+        "created_at": {"$gte": today_start},
+        "transaction_type": "parking_fee"
+    }).to_list(length=10000)
+    today_revenue = sum(t["amount"] for t in today_transactions)
+    
+    # Get slots info
+    total_slots = await db.parking_slots.count_documents({})
+    available_slots = await db.parking_slots.count_documents({"status": "available"})
+    occupied_slots = await db.parking_slots.count_documents({"status": "occupied"})
     
     # Get recent sessions
     recent_sessions = await db.sessions.find().sort("entry_time", -1).limit(10).to_list(length=10)
@@ -134,8 +149,141 @@ async def get_dashboard_stats(db: AsyncIOMotorDatabase = Depends(get_database)):
     return {
         "success": True,
         "data": {
-            **general_stats["data"],
+            "total_customers": total_customers,
+            "total_vehicles": total_vehicles,
+            "active_sessions": active_sessions,
+            "today_revenue": today_revenue,
+            "total_slots": total_slots if total_slots > 0 else 20,
+            "available_slots": available_slots,
+            "occupied_slots": occupied_slots,
             "recent_sessions": recent_sessions,
             "active_sessions_list": active_sessions_list
         }
     }
+
+
+@router.get("/occupancy")
+async def get_occupancy_stats(db: AsyncIOMotorDatabase = Depends(get_database)):
+    """Get occupancy statistics for chart"""
+    total_slots = await db.parking_slots.count_documents({})
+    occupied = await db.parking_slots.count_documents({"status": "occupied"})
+    available = await db.parking_slots.count_documents({"status": "available"})
+    
+    # If no slots initialized, return default
+    if total_slots == 0:
+        return {
+            "success": True,
+            "data": {
+                "occupied": 0,
+                "available": 20,
+                "total": 20
+            }
+        }
+    
+    return {
+        "success": True,
+        "data": {
+            "occupied": occupied,
+            "available": available,
+            "total": total_slots
+        }
+    }
+
+
+@router.get("/revenue-summary")
+async def get_revenue_summary(db: AsyncIOMotorDatabase = Depends(get_database)):
+    """Get revenue summary for revenue page"""
+    now = datetime.now()
+    
+    # Today
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_txs = await db.transactions.find({
+        "created_at": {"$gte": today_start},
+        "transaction_type": {"$in": ["parking_fee", "package_purchase"]}
+    }).to_list(length=10000)
+    today_revenue = sum(t["amount"] for t in today_txs)
+    
+    # This week
+    week_start = now - timedelta(days=now.weekday())
+    week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_txs = await db.transactions.find({
+        "created_at": {"$gte": week_start},
+        "transaction_type": {"$in": ["parking_fee", "package_purchase"]}
+    }).to_list(length=10000)
+    week_revenue = sum(t["amount"] for t in week_txs)
+    
+    # This month
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_txs = await db.transactions.find({
+        "created_at": {"$gte": month_start},
+        "transaction_type": {"$in": ["parking_fee", "package_purchase"]}
+    }).to_list(length=10000)
+    month_revenue = sum(t["amount"] for t in month_txs)
+    
+    # Total
+    all_txs = await db.transactions.find({
+        "transaction_type": {"$in": ["parking_fee", "package_purchase"]}
+    }).to_list(length=100000)
+    total_revenue = sum(t["amount"] for t in all_txs)
+    
+    return {
+        "success": True,
+        "data": {
+            "today": today_revenue,
+            "week": week_revenue,
+            "month": month_revenue,
+            "total": total_revenue
+        }
+    }
+
+
+@router.get("/revenue-by-package")
+async def get_revenue_by_package(db: AsyncIOMotorDatabase = Depends(get_database)):
+    """Get revenue breakdown by package type"""
+    # Get all transactions
+    transactions = await db.transactions.find({
+        "transaction_type": {"$in": ["parking_fee", "package_purchase"]}
+    }).to_list(length=100000)
+    
+    # Count by type
+    per_use = sum(t["amount"] for t in transactions if t.get("transaction_type") == "parking_fee")
+    daily = 0
+    monthly = 0
+    
+    # Get package purchases
+    packages = await db.packages.find({}).to_list(length=10000)
+    for pkg in packages:
+        if pkg.get("package_type") == "daily":
+            daily += pkg.get("price", 50000)
+        elif pkg.get("package_type") == "monthly":
+            monthly += pkg.get("price", 500000)
+    
+    return {
+        "success": True,
+        "data": {
+            "labels": ["Theo lượt", "Theo ngày", "Theo tháng"],
+            "values": [per_use, daily, monthly]
+        }
+    }
+
+
+@router.get("/recent-transactions")
+async def get_recent_transactions(
+    limit: int = Query(10, ge=1, le=100),
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    """Get recent transactions"""
+    transactions = await db.transactions.find().sort("created_at", -1).limit(limit).to_list(length=limit)
+    
+    # Enrich with customer info
+    for tx in transactions:
+        customer = await db.customers.find_one({"customer_id": tx.get("customer_id")})
+        tx["customer_name"] = customer.get("name") if customer else "N/A"
+    
+    return {
+        "success": True,
+        "data": transactions
+    }
+
+
+

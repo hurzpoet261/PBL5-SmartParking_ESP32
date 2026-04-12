@@ -11,34 +11,58 @@ async function initRevenuePage() {
 
 async function loadRevenueSummary() {
     try {
+        console.log('Loading revenue summary...');
         const result = await api.get('/stats/revenue-summary');
+        console.log('Revenue summary result:', result);
         
-        if (result.success && result.data) {
+        if (result && result.success && result.data) {
             document.getElementById('todayRevenue').textContent = formatCurrency(result.data.today || 0);
             document.getElementById('weekRevenue').textContent = formatCurrency(result.data.week || 0);
             document.getElementById('monthRevenue').textContent = formatCurrency(result.data.month || 0);
             document.getElementById('totalRevenue').textContent = formatCurrency(result.data.total || 0);
+        } else {
+            // Set default values
+            document.getElementById('todayRevenue').textContent = '0đ';
+            document.getElementById('weekRevenue').textContent = '0đ';
+            document.getElementById('monthRevenue').textContent = '0đ';
+            document.getElementById('totalRevenue').textContent = '0đ';
+            showToast('Không thể tải dữ liệu doanh thu. Kiểm tra backend.', 'warning');
         }
     } catch (error) {
         console.error('Error loading revenue summary:', error);
+        showToast('Lỗi tải dữ liệu doanh thu', 'danger');
     }
 }
 
 async function loadRevenueCharts() {
     try {
         // Daily revenue chart
+        console.log('Loading daily revenue chart...');
         const dailyData = await api.get('/stats/revenue?days=30');
-        if (dailyData.success) {
-            createDailyRevenueChart(dailyData.data);
+        console.log('Daily revenue data:', dailyData);
+        
+        if (dailyData && dailyData.success && dailyData.data && dailyData.data.chart_data) {
+            const labels = dailyData.data.chart_data.map(d => d.date);
+            const values = dailyData.data.chart_data.map(d => d.revenue);
+            createDailyRevenueChart({ labels, values });
+        } else {
+            createDailyRevenueChart({ labels: [], values: [] });
         }
         
         // Package revenue chart
+        console.log('Loading package revenue chart...');
         const packageData = await api.get('/stats/revenue-by-package');
-        if (packageData.success) {
+        console.log('Package revenue data:', packageData);
+        
+        if (packageData && packageData.success && packageData.data) {
             createPackageRevenueChart(packageData.data);
+        } else {
+            createPackageRevenueChart({ labels: ['Theo lượt', 'Theo ngày', 'Theo tháng'], values: [0, 0, 0] });
         }
     } catch (error) {
         console.error('Error loading charts:', error);
+        createDailyRevenueChart({ labels: [], values: [] });
+        createPackageRevenueChart({ labels: ['Theo lượt', 'Theo ngày', 'Theo tháng'], values: [0, 0, 0] });
     }
 }
 
@@ -112,11 +136,19 @@ function createPackageRevenueChart(data) {
 }
 
 async function loadRecentTransactions() {
+    const tbody = document.getElementById('transactionsTable');
+    
     try {
+        console.log('Loading recent transactions...');
         const result = await api.get('/stats/recent-transactions?limit=10');
-        const tbody = document.getElementById('transactionsTable');
+        console.log('Transactions result:', result);
         
-        if (!result.success || !result.data || result.data.length === 0) {
+        if (!result || !result.success) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Lỗi tải dữ liệu. Kiểm tra backend.</td></tr>';
+            return;
+        }
+        
+        if (!result.data || result.data.length === 0) {
             tbody.innerHTML = '<tr><td colspan="5" class="text-center">Không có giao dịch</td></tr>';
             return;
         }

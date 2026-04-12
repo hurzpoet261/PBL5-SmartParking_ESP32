@@ -104,9 +104,11 @@
     <script src="../assets/js/api.js"></script>
     <script>
         async function loadVehicles() {
+            const tbody = document.getElementById('vehiclesTable');
+            
             try {
-                const search = document.getElementById('searchInput').value;
-                const type = document.getElementById('typeFilter').value;
+                const search = document.getElementById('searchInput')?.value || '';
+                const type = document.getElementById('typeFilter')?.value || '';
                 
                 let url = '/vehicles';
                 const params = [];
@@ -114,10 +116,16 @@
                 if (type) params.push(`vehicle_type=${type}`);
                 if (params.length > 0) url += '?' + params.join('&');
                 
+                console.log('Loading vehicles from:', url);
                 const result = await api.get(url);
-                const tbody = document.getElementById('vehiclesTable');
+                console.log('Vehicles result:', result);
                 
-                if (!result.success || !result.data || result.data.length === 0) {
+                if (!result || !result.success) {
+                    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">Lỗi tải dữ liệu. Kiểm tra backend đã chạy chưa.</td></tr>';
+                    return;
+                }
+                
+                if (!result.data || result.data.length === 0) {
                     tbody.innerHTML = '<tr><td colspan="8" class="text-center">Không có dữ liệu</td></tr>';
                     return;
                 }

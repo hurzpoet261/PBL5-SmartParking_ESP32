@@ -16,7 +16,7 @@ WIFI_RETRY_DELAY = 5                 # Delay giữa các lần thử lại (giâ
 # BACKEND API CONFIGURATION
 # ═══════════════════════════════════════════════════
 
-API_BASE_URL = "http://192.168.1.233:8000/api/v1"  # ⚠️ THAY ĐỔI: IP máy tính chạy backend
+API_BASE_URL = "http://169.254.149.32:8000/api/v1"  # ⚠️ THAY ĐỔI: IP máy tính chạy backend
 API_TIMEOUT = 10                     # Timeout cho API request (giây)
 API_RETRY = 3                        # Số lần thử lại khi lỗi
 
@@ -114,6 +114,7 @@ OFFLINE_ALLOW_ALL_CARDS = False      # Cho phép tất cả thẻ khi offline
 OFFLINE_AUTHORIZED_CARDS = [         # Danh sách thẻ được phép (offline)
     "0xa3d6ce05",
     "0xcc40d906",
+    "0xd5a810ec",
 ]
 
 # ═══════════════════════════════════════════════════

@@ -28,6 +28,84 @@ class RFIDScanRequest(BaseModel):
     timestamp: Optional[float] = Field(None, description="Timestamp")
 
 
+@router.get("/latest-scan")
+async def get_latest_scan(db: AsyncIOMotorDatabase = Depends(get_database)):
+    """
+    Get latest scanned card UID (for web registration)
+    Returns the most recent card UID that was scanned
+    """
+    # Find the most recent pending card scan
+    latest = await db.pending_scans.find_one(
+        {},
+        sort=[("scanned_at", -1)]
+    )
+    
+    if latest:
+        return {
+            "success": True,
+            "card_uid": latest["card_uid"],
+            "scanned_at": latest["scanned_at"].isoformat(),
+            "gate_id": latest.get("gate_id", 1)
+        }
+    else:
+        return {
+            "success": False,
+            "message": "Chưa có thẻ nào được quét. Vui lòng quét thẻ RFID."
+        }
+
+
+@router.delete("/latest-scan")
+async def clear_latest_scan(db: AsyncIOMotorDatabase = Depends(get_database)):
+    """Clear the latest scan (after registration)"""
+    result = await db.pending_scans.delete_many({})
+    return {
+        "success": True,
+        "deleted_count": result.deleted_count
+    }
+
+
+@router.post("/register-card")
+async def register_card(
+    card_data: dict,
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    """Register a new RFID card"""
+    from datetime import datetime
+    
+    card_uid = card_data.get("card_uid")
+    customer_id = card_data.get("customer_id")
+    vehicle_id = card_data.get("vehicle_id")
+    status = card_data.get("status", "active")
+    
+    # Check if card already exists
+    existing = await db.rfid_cards.find_one({"card_uid": card_uid})
+    if existing:
+        return {
+            "success": False,
+            "error": "Thẻ này đã được đăng ký"
+        }
+    
+    # Create card
+    card_doc = {
+        "card_uid": card_uid,
+        "customer_id": customer_id,
+        "vehicle_id": vehicle_id,
+        "status": status,
+        "issued_at": datetime.now(),
+        "expire_at": None,
+        "created_at": datetime.now(),
+        "notes": "Đăng ký từ web"
+    }
+    
+    await db.rfid_cards.insert_one(card_doc)
+    
+    return {
+        "success": True,
+        "message": "Đăng ký thẻ thành công",
+        "data": card_doc
+    }
+
+
 @router.post("/scan")
 async def rfid_scan(request: RFIDScanRequest, db: AsyncIOMotorDatabase = Depends(get_database)):
     """
@@ -48,6 +126,14 @@ async def rfid_scan(request: RFIDScanRequest, db: AsyncIOMotorDatabase = Depends
     distance = request.distance_cm
     timestamp = request.timestamp or datetime.now().timestamp()
     dt = datetime.fromtimestamp(timestamp)
+    
+    # Save to pending scans (for web registration)
+    await db.pending_scans.insert_one({
+        "card_uid": card_uid,
+        "gate_id": gate_id,
+        "distance_cm": distance,
+        "scanned_at": dt
+    })
     
     # Check if card exists
     card = await db.rfid_cards.find_one({"card_uid": card_uid})
