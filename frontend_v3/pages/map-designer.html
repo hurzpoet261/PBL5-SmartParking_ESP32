@@ -56,14 +56,30 @@
     let scaleFactor = null; // mét/pixel
 
     // 1. Tải ảnh lên làm nền
+    // Cập nhật phần Tải ảnh lên làm nền trong map-designer.html
     document.getElementById('uploadMap').onchange = function(e) {
         const reader = new FileReader();
         reader.onload = function(f) {
             fabric.Image.fromURL(f.target.result, function(img) {
-                const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+                // 1. Tính toán tỉ lệ để ảnh vừa khít với Canvas
+                const scale = Math.min(
+                    canvas.width / img.width, 
+                    canvas.height / img.height
+                );
+
+                // 2. Thiết lập ảnh nền với các thuộc tính căn chỉnh
                 canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas), {
-                    scaleX: scale, scaleY: scale
+                    scaleX: scale,
+                    scaleY: scale,
+                    // Căn giữa ảnh trên Canvas để không bị lệch xuống dưới
+                    left: canvas.width / 2,
+                    top: canvas.height / 2,
+                    originX: 'center',
+                    originY: 'center'
                 });
+                
+                // 3. Reset lại các điểm vẽ cũ nếu có
+                resetCanvas();
             });
         };
         reader.readAsDataURL(e.target.files[0]);
@@ -127,19 +143,38 @@
     }
 
     function handleScaleDrawing(pointer) {
-        tempPoints.push(pointer);
-        if (tempPoints.length === 2) {
-            const p1 = tempPoints[0];
-            const p2 = tempPoints[1];
-            const pixelDist = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
-            const realDist = prompt("Nhập chiều dài thực tế của đoạn này (mét):", "10");
+    // Vẽ một điểm đánh dấu tại vị trí click
+    const point = new fabric.Circle({ 
+        radius: 5, fill: '#ffc107', left: pointer.x - 5, top: pointer.y - 5, selectable: false 
+    });
+    canvas.add(point);
+    tempPoints.push(pointer);
+
+    if (tempPoints.length === 2) {
+        const p1 = tempPoints[0];
+        const p2 = tempPoints[1];
+        
+        // Vẽ đường thẳng nối 2 điểm để bạn thấy rõ đoạn mình vừa chọn
+        const line = new fabric.Line([p1.x, p1.y, p2.x, p2.y], {
+            stroke: '#ffc107', strokeWidth: 3, selectable: false
+        });
+        canvas.add(line);
+
+        const pixelDist = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+        
+        // Sử dụng setTimeout để trình duyệt kịp vẽ đường thẳng trước khi hiện prompt
+        setTimeout(() => {
+            const realDist = prompt("Nhập chiều dài thực tế của đoạn thẳng màu vàng vừa vẽ (mét):", "10");
             if (realDist) {
                 scaleFactor = parseFloat(realDist) / pixelDist;
-                alert(`Đã thiết lập: 1 pixel = ${scaleFactor.toFixed(4)} mét`);
+                alert(`Thành công! 1 pixel trên bản vẽ = ${scaleFactor.toFixed(4)} mét thực tế.`);
             }
+            // Xóa đường thẳng và điểm tạm sau khi xong
+            canvas.remove(line);
             setMode(null);
-        }
+        }, 100);
     }
+}
 
     function resetCanvas() {
         canvas.getObjects().forEach(obj => { if(obj !== canvas.backgroundImage) canvas.remove(obj); });
@@ -148,31 +183,81 @@
 
     // 3. Gửi dữ liệu xuống Backend
     async function generateLayout() {
-        if (!scaleFactor) return alert("Vui lòng đặt tỷ lệ trước!");
+    if (!scaleFactor) return alert("Vui lòng đặt tỷ lệ trước!");
+    
+    // Tính toán tọa độ tuyệt đối cho ranh giới
+    const boundaryObj = canvas.getObjects().find(o => o.objectType === 'boundary');
+    const boundaryPoints = boundaryObj.points.map(p => ({
+        x: boundaryObj.left + (p.x + boundaryObj.width / 2) * boundaryObj.scaleX,
+        y: boundaryObj.top + (p.y + boundaryObj.height / 2) * boundaryObj.scaleY
+    }));
+
+    // Tính toán tọa độ tuyệt đối cho các vật cản
+    const obstacleObjs = canvas.getObjects().filter(o => o.objectType === 'obstacle');
+    const obstaclesData = obstacleObjs.map(obs => {
+        return obs.points.map(p => ({
+            x: obs.left + (p.x + obs.width / 2) * obs.scaleX,
+            y: obs.top + (p.y + obs.height / 2) * obs.scaleY
+        }));
+    });
+
+    const requestData = {
+        scale_factor: scaleFactor,
+        boundary: boundaryPoints, // Đã sửa thành tọa độ tuyệt đối
+        obstacles: obstaclesData,  // Đã sửa thành tọa độ tuyệt đối
+        config: { slot_width: 2.5, slot_length: 5.0, aisle_width: 6.0 }
+    };
+
+    try {
+        const res = await api.post('/slots/generate-layout', requestData); //
         
-        const boundaryObj = canvas.getObjects().find(o => o.objectType === 'boundary');
-        const obstacleObjs = canvas.getObjects().filter(o => o.objectType === 'obstacle');
-
-        if (!boundaryObj) return alert("Vui lòng vẽ ranh giới bãi đỗ!");
-
-        const requestData = {
-            scale_factor: scaleFactor,
-            boundary: boundaryObj.points,
-            obstacles: obstacleObjs.map(o => o.points),
-            config: { slot_width: 2.5, slot_length: 5.0, aisle_width: 6.0 }
-        };
-
-        try {
-            const res = await api.post('/slots/generate-layout', requestData);
-            if (res.success) {
-                alert(`Đã tạo thành công ${res.total} chỗ đỗ mới!`);
-                window.location.href = 'parking-map.html';
-            }
-        } catch (err) {
-            console.error(err);
-            alert("Lỗi khi kết nối Backend.");
+        if (res.success && res.generated_slots) {
+            showToast(`Đã tạo thành công ${res.total} chỗ đỗ!`); //
+            
+            // Vẽ các slot lên canvas để xem thử
+            res.generated_slots.forEach(slot => {
+                const rect = new fabric.Rect({
+                    left: slot.x,
+                    top: slot.y,
+                    width: slot.width_px,
+                    height: slot.height_px,
+                    angle: slot.angle || 0,
+                    fill: slot.type === 'disabled' ? 'rgba(0, 123, 255, 0.4)' : 'rgba(40, 167, 69, 0.3)',
+                    stroke: '#28a745',
+                    strokeWidth: 1,
+                    selectable: false
+                });
+                canvas.add(rect);
+            });
+            canvas.renderAll();
+            
+            // Đợi 2 giây để người dùng xem rồi mới chuyển trang
+            setTimeout(() => {
+                if(confirm("Bạn có muốn lưu sơ đồ này và chuyển đến trang quản lý không?")) {
+                    window.location.href = 'parking-map.html';
+                }
+            }, 500);
+        } else {
+            alert("Lỗi từ server: " + (res.error || "Không thể tạo sơ đồ"));
         }
+    } catch (err) {
+        console.error("Lỗi kết nối:", err);
+        alert("Không thể kết nối tới Backend. Hãy kiểm tra console (F12).");
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
     }
+}
+canvas.on('mouse:wheel', function(opt) {
+    var delta = opt.e.deltaY;
+    var zoom = canvas.getZoom();
+    zoom *= 0.999 ** delta;
+    if (zoom > 20) zoom = 20;
+    if (zoom < 0.01) zoom = 0.01;
+    canvas.setZoom(zoom);
+    opt.e.preventDefault();
+    opt.e.stopPropagation();
+});
 </script>
 </body>
 </html>
