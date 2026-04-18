@@ -8,6 +8,7 @@ from datetime import datetime
 
 from app.database import get_database
 from app.utils.id_generator import generate_id
+from app.utils.serializers import serialize_mongodb_document, serialize_list
 from app.models.package import PackageCreate, Package, PackageType
 from app.services.fee_calculator import FeeCalculator
 
@@ -34,7 +35,7 @@ async def get_packages(
     return {
         "success": True,
         "total": len(packages),
-        "data": packages
+        "data": serialize_list(packages)
     }
 
 
@@ -89,7 +90,7 @@ async def create_package(package: PackageCreate, db: AsyncIOMotorDatabase = Depe
     return {
         "success": True,
         "message": "Package created successfully",
-        "data": new_package
+        "data": serialize_mongodb_document(new_package)
     }
 
 

@@ -8,6 +8,7 @@ from datetime import datetime
 
 from app.database import get_database
 from app.utils.id_generator import generate_id
+from app.utils.serializers import serialize_mongodb_document, serialize_list
 from app.models.vehicle import VehicleCreate, VehicleUpdate
 
 router = APIRouter()
@@ -36,7 +37,7 @@ async def get_vehicles(
     return {
         "success": True,
         "total": total,
-        "data": vehicles
+        "data": serialize_list(vehicles)
     }
 
 
@@ -68,7 +69,7 @@ async def create_vehicle(vehicle: VehicleCreate, db: AsyncIOMotorDatabase = Depe
     return {
         "success": True,
         "message": "Vehicle created successfully",
-        "data": new_vehicle
+        "data": serialize_mongodb_document(new_vehicle)
     }
 
 
@@ -97,5 +98,5 @@ async def update_vehicle(
     return {
         "success": True,
         "message": "Vehicle updated successfully",
-        "data": updated
+        "data": serialize_mongodb_document(updated)
     }

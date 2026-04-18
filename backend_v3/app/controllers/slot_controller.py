@@ -8,6 +8,7 @@ from datetime import datetime
 
 from app.database import get_database
 from app.config import settings
+from app.utils.serializers import serialize_mongodb_document, serialize_list
 
 router = APIRouter()
 
@@ -28,7 +29,7 @@ async def get_slots(
     return {
         "success": True,
         "total": len(slots),
-        "data": slots
+        "data": serialize_list(slots)
     }
 
 
@@ -43,7 +44,7 @@ async def get_parking_map(db: AsyncIOMotorDatabase = Depends(get_database)):
         row = slot["row"]
         if row not in map_data:
             map_data[row] = []
-        map_data[row].append(slot)
+        map_data[row].append(serialize_mongodb_document(slot))
     
     # Get statistics
     total_slots = len(slots)
