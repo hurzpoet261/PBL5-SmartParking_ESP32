@@ -10,6 +10,7 @@ import logging
 
 from app.database import get_database
 from app.utils.id_generator import generate_id
+from app.utils.serializers import serialize_mongodb_document
 from app.services.fee_calculator import FeeCalculator
 from app.models.customer import CustomerType
 from app.models.session import SessionStatus
@@ -102,7 +103,7 @@ async def register_card(
     return {
         "success": True,
         "message": "Đăng ký thẻ thành công",
-        "data": card_doc
+        "data": serialize_mongodb_document(card_doc)
     }
 
 

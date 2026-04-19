@@ -8,6 +8,7 @@ from datetime import datetime
 
 from app.database import get_database
 from app.utils.id_generator import generate_id
+from app.utils.serializers import serialize_mongodb_document, serialize_list
 from app.models.customer import CustomerCreate, CustomerUpdate, CustomerType
 
 router = APIRouter()
@@ -42,7 +43,7 @@ async def get_customers(
         "total": total,
         "skip": skip,
         "limit": limit,
-        "data": customers
+        "data": serialize_list(customers)
     }
 
 
@@ -74,13 +75,13 @@ async def get_customer(customer_id: str, db: AsyncIOMotorDatabase = Depends(get_
     return {
         "success": True,
         "data": {
-            **customer,
-            "vehicles": vehicles,
-            "rfid_cards": cards,
+            **serialize_mongodb_document(customer),
+            "vehicles": serialize_list(vehicles),
+            "rfid_cards": serialize_list(cards),
             "total_sessions": len(sessions),
             "active_sessions": len(active_sessions),
             "total_spent": total_spent,
-            "current_package": active_package
+            "current_package": serialize_mongodb_document(active_package) if active_package else None
         }
     }
 
@@ -110,7 +111,7 @@ async def create_customer(customer: CustomerCreate, db: AsyncIOMotorDatabase = D
     return {
         "success": True,
         "message": "Customer created successfully",
-        "data": new_customer
+        "data": serialize_mongodb_document(new_customer)
     }
 
 
@@ -139,7 +140,7 @@ async def update_customer(
     return {
         "success": True,
         "message": "Customer updated successfully",
-        "data": updated
+        "data": serialize_mongodb_document(updated)
     }
 
 

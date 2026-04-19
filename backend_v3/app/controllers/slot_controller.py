@@ -9,6 +9,7 @@ from datetime import datetime
 
 from app.database import get_database
 from app.config import settings
+from app.utils.serializers import serialize_mongodb_document, serialize_list
 
 router = APIRouter()
 
@@ -33,7 +34,7 @@ async def get_slots(
     return {
         "success": True,
         "total": len(slots),
-        "data": slots
+        "data": serialize_list(slots)
     }
 
 

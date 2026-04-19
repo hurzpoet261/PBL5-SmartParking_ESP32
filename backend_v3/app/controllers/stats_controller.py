@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 
 from app.database import get_database
+from app.utils.serializers import serialize_list
 
 router = APIRouter()
 
@@ -156,8 +157,8 @@ async def get_dashboard_stats(db: AsyncIOMotorDatabase = Depends(get_database)):
             "total_slots": total_slots if total_slots > 0 else 20,
             "available_slots": available_slots,
             "occupied_slots": occupied_slots,
-            "recent_sessions": recent_sessions,
-            "active_sessions_list": active_sessions_list
+            "recent_sessions": serialize_list(recent_sessions),
+            "active_sessions_list": serialize_list(active_sessions_list)
         }
     }
 
@@ -282,7 +283,7 @@ async def get_recent_transactions(
     
     return {
         "success": True,
-        "data": transactions
+        "data": serialize_list(transactions)
     }
 
 
