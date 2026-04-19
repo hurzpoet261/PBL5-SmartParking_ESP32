@@ -16,12 +16,14 @@ async function loadParkingMap() {
             return;
         }
         
-        if (!result.data || result.data.length === 0) {
+        // Sửa lại điều kiện kiểm tra biến map và total_slots
+        if (!result.map || result.total_slots === 0) {
             showToast('Chưa có chỗ đỗ nào. Vui lòng khởi tạo dữ liệu.', 'warning');
             return;
         }
         
-        const slots = result.data;
+        // Rút trích tất cả các ô đỗ xe từ các hàng (row) gộp thành 1 mảng
+        const slots = Object.values(result.map).flat();
         const grid = document.getElementById('parkingGrid');
         
         // Count by status

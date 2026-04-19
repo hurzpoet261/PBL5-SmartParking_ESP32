@@ -42,10 +42,18 @@ async def init_parking_slots():
         
         # Create 20 parking slots
         slots = []
+       # Create 20 parking slots (4 rows, 5 columns)
+        slots = []
         for i in range(1, 21):
+            # Tính toán tọa độ hàng và cột (ví dụ: chia thành 4 hàng, mỗi hàng 5 ô)
+            row_index = (i - 1) // 5
+            col_index = (i - 1) % 5
+            
             slot = {
                 "slot_id": f"SLOT-{i:03d}",
                 "slot_number": f"A{i:02d}",
+                "row": row_index,      # BỔ SUNG TRƯỜNG NÀY
+                "col": col_index,      # BỔ SUNG TRƯỜNG NÀY (Thường đi kèm với row)
                 "status": "available",
                 "vehicle_id": None,
                 "session_id": None,

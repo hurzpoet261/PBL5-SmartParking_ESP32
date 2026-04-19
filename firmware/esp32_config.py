@@ -16,7 +16,7 @@ WIFI_RETRY_DELAY = 5                 # Delay giữa các lần thử lại (giâ
 # BACKEND API CONFIGURATION
 # ═══════════════════════════════════════════════════
 
-API_BASE_URL = "http://169.254.149.32:8000/api/v1"  # ⚠️ THAY ĐỔI: IP máy tính chạy backend
+API_BASE_URL = "http://192.168.1.235:8000/api/v1"  # ⚠️ THAY ĐỔI: IP máy tính chạy backend
 API_TIMEOUT = 10                     # Timeout cho API request (giây)
 API_RETRY = 3                        # Số lần thử lại khi lỗi
 
