@@ -9,6 +9,11 @@ from app.database import get_database
 
 router = APIRouter()
 
+def fix_id(doc):
+    """Chuyển đổi _id từ ObjectId sang str để FastAPI có thể render JSON"""
+    if doc and "_id" in doc:
+        doc["_id"] = str(doc["_id"])
+    return doc
 
 @router.get("")
 async def get_sessions(
@@ -50,9 +55,16 @@ async def get_sessions(
     # Enrich with customer and vehicle info
     enriched_sessions = []
     for session in sessions:
+        fix_id(session)
+        
         customer = await db.customers.find_one({"customer_id": session.get("customer_id")})
+        fix_id(customer)
+
         vehicle = await db.vehicles.find_one({"vehicle_id": session.get("vehicle_id")})
+        fix_id(vehicle)
+
         slot = await db.parking_slots.find_one({"slot_id": session.get("slot_id")})
+        fix_id(slot)
         
         enriched_session = {
             **session,
@@ -93,7 +105,7 @@ async def get_session(session_id: str, db: AsyncIOMotorDatabase = Depends(get_da
     return {
         "success": True,
         "data": {
-            **session,
+            **fix_id(session),
             "customer": customer,
             "vehicle": vehicle
         }
