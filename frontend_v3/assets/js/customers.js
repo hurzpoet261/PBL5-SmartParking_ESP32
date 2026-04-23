@@ -1,4 +1,5 @@
 // Customers Management
+let customersAutoRefresh = null;
 
 async function loadCustomers() {
     const tbody = document.getElementById('customersTable');
@@ -95,5 +96,12 @@ async function deleteCustomer(customerId) {
     }
 }
 
+function initCustomersPage() {
+    loadCustomers();
+    if (!customersAutoRefresh) {
+        customersAutoRefresh = setInterval(loadCustomers, 10000);
+    }
+}
+
 // Initialize
-document.addEventListener('DOMContentLoaded', loadCustomers);
+document.addEventListener('DOMContentLoaded', initCustomersPage);
