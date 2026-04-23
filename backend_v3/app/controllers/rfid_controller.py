@@ -26,7 +26,7 @@ class RFIDScanRequest(BaseModel):
     card_uid: str = Field(..., description="Card UID")
     gate_id: int = Field(1, description="Gate ID")
     distance_cm: Optional[float] = Field(None, description="Distance from ultrasonic sensor")
-    timestamp: Optional[float] = Field(None, description="Timestamp")
+    timestamp: Optional[float] = Field(None, description="Timestamp from device (currently ignored; server time is authoritative)")
 
 
 @router.get("/latest-scan")
@@ -125,8 +125,7 @@ async def rfid_scan(request: RFIDScanRequest, db: AsyncIOMotorDatabase = Depends
     card_uid = request.card_uid
     gate_id = request.gate_id
     distance = request.distance_cm
-    timestamp = request.timestamp or datetime.now().timestamp()
-    dt = datetime.fromtimestamp(timestamp)
+    dt = datetime.now()
     
     # Save to pending scans (for web registration)
     await db.pending_scans.insert_one({
