@@ -171,6 +171,11 @@ async def delete_customer(customer_id: str, db: AsyncIOMotorDatabase = Depends(g
     
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Customer not found")
+
+    await db.vehicles.delete_many({"customer_id": customer_id})
+    await db.rfid_cards.delete_many({"customer_id": customer_id})
+    await db.packages.delete_many({"customer_id": customer_id})
+    await db.transactions.delete_many({"customer_id": customer_id})
     
     return {
         "success": True,

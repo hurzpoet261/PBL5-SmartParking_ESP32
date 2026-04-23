@@ -154,6 +154,15 @@ async def rfid_scan(request: RFIDScanRequest, db: AsyncIOMotorDatabase = Depends
         
         customer = await db.customers.find_one({"customer_id": card["customer_id"]})
         vehicle = await db.vehicles.find_one({"vehicle_id": card["vehicle_id"]})
+
+        if not customer or not vehicle:
+            logger.warning(f"⚠️ Card data inconsistent for {card_uid}: customer={bool(customer)}, vehicle={bool(vehicle)}")
+            return {
+                "success": False,
+                "action": "denied",
+                "message": "Thẻ đang liên kết với dữ liệu không hợp lệ. Vui lòng đăng ký lại hoặc liên hệ quản lý.",
+                "error_code": "INCONSISTENT_CARD_BINDING"
+            }
         
         # Find active session
         active_session = await db.sessions.find_one({
