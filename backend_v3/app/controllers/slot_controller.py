@@ -2,7 +2,7 @@
 Parking Slot Controller
 """
 from shapely.geometry import Polygon, box
-from fastapi import APIRouter, Depends, Query, Body
+from fastapi import APIRouter, Depends, Query, Body, HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from typing import Optional
 from datetime import datetime
@@ -42,8 +42,8 @@ async def get_slots(
 async def get_parking_map(db: AsyncIOMotorDatabase = Depends(get_database)):
     """Get parking map layout"""
     slots = await db.parking_slots.find().sort([("row", 1), ("col", 1)]).to_list(length=1000)
-    
-    # Group by row
+
+    serialized_slots = []
     map_data = {}
     for slot in slots:
         slot["_id"] = str(slot["_id"])  # 👈 BỔ SUNG DÒNG NÀY ĐỂ FIX LỖI
@@ -54,7 +54,6 @@ async def get_parking_map(db: AsyncIOMotorDatabase = Depends(get_database)):
             
         map_data[row].append(slot)
     
-    # Get statistics
     total_slots = len(slots)
     available = len([s for s in slots if s["status"] == "available"])
     occupied = len([s for s in slots if s["status"] == "occupied"])
@@ -73,7 +72,41 @@ async def get_parking_map(db: AsyncIOMotorDatabase = Depends(get_database)):
             "maintenance": maintenance,
             "occupancy_rate": round((occupied / total_slots * 100), 1) if total_slots > 0 else 0
         },
+        "data": serialized_slots,
         "map": map_data
+    }
+
+
+@router.get("/{slot_id}")
+async def get_slot_detail(slot_id: str, db: AsyncIOMotorDatabase = Depends(get_database)):
+    """Get parking slot detail"""
+    slot = await db.parking_slots.find_one({"slot_id": slot_id})
+
+    if not slot:
+        raise HTTPException(status_code=404, detail="Slot not found")
+
+    slot_data = serialize_mongodb_document(slot)
+    slot_data["slot_number"] = slot_data.get("slot_id")
+
+    if slot.get("session_id"):
+        session = await db.sessions.find_one({"session_id": slot["session_id"]})
+        if session:
+            customer = await db.customers.find_one({"customer_id": session.get("customer_id")})
+            vehicle = await db.vehicles.find_one({"vehicle_id": session.get("vehicle_id")})
+            slot_data["current_session"] = {
+                "session_id": session.get("session_id"),
+                "customer_name": customer.get("name") if customer else "N/A",
+                "plate_number": vehicle.get("plate_number") if vehicle else "N/A",
+                "check_in_time": session.get("entry_time")
+            }
+        else:
+            slot_data["current_session"] = None
+    else:
+        slot_data["current_session"] = None
+
+    return {
+        "success": True,
+        "data": serialize_mongodb_document(slot_data)
     }
 
 

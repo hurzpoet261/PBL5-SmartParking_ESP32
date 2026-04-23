@@ -143,7 +143,7 @@
                         <td>${formatDateTime(session.check_in_time)}</td>
                         <td>${session.check_out_time ? formatDateTime(session.check_out_time) : '-'}</td>
                         <td>${formatCurrency(session.fee || 0)}</td>
-                        <td><span class="badge bg-${session.status === 'active' ? 'success' : 'secondary'}">${session.status === 'active' ? 'Đang đỗ' : 'Đã ra'}</span></td>
+                        <td><span class="badge bg-${session.status === 'in_progress' ? 'success' : 'secondary'}">${session.status === 'in_progress' ? 'Đang đỗ' : 'Đã ra'}</span></td>
                     </tr>
                 `).join('');
             } catch (error) {

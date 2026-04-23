@@ -37,13 +37,21 @@ async def get_customers(
     
     total = await db.customers.count_documents(query)
     customers = await db.customers.find(query).skip(skip).limit(limit).to_list(length=limit)
+
+    enriched_customers = []
+    for customer in customers:
+        vehicle_count = await db.vehicles.count_documents({"customer_id": customer.get("customer_id")})
+        enriched_customers.append({
+            **serialize_mongodb_document(customer),
+            "vehicle_count": vehicle_count
+        })
     
     return {
         "success": True,
         "total": total,
         "skip": skip,
         "limit": limit,
-        "data": serialize_list(customers)
+        "data": serialize_list(enriched_customers)
     }
 
 

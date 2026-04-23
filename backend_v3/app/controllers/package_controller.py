@@ -18,6 +18,7 @@ router = APIRouter()
 @router.get("")
 async def get_packages(
     customer_id: Optional[str] = None,
+    package_type: Optional[str] = None,
     status: Optional[str] = None,
     db: AsyncIOMotorDatabase = Depends(get_database)
 ):
@@ -27,15 +28,31 @@ async def get_packages(
     if customer_id:
         query["customer_id"] = customer_id
     
+    if package_type:
+        query["package_type"] = package_type
+    
     if status:
         query["status"] = status
     
     packages = await db.packages.find(query).sort("created_at", -1).to_list(length=1000)
+
+    enriched_packages = []
+    for package in packages:
+        customer = await db.customers.find_one({"customer_id": package.get("customer_id")})
+        vehicle = await db.vehicles.find_one({"vehicle_id": package.get("vehicle_id")})
+
+        enriched_packages.append({
+            **serialize_mongodb_document(package),
+            "customer_name": customer.get("name") if customer else "N/A",
+            "plate_number": vehicle.get("plate_number") if vehicle else "N/A",
+            "end_date": package.get("expire_date"),
+            "is_active": package.get("status") == "active"
+        })
     
     return {
         "success": True,
-        "total": len(packages),
-        "data": serialize_list(packages)
+        "total": len(enriched_packages),
+        "data": serialize_list(enriched_packages)
     }
 
 

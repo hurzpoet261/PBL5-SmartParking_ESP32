@@ -142,8 +142,8 @@
                         <td><span class="badge bg-info">${getPackageTypeLabel(pkg.package_type)}</span></td>
                         <td>${formatCurrency(pkg.price)}</td>
                         <td>${formatDate(pkg.start_date)}</td>
-                        <td>${formatDate(pkg.end_date)}</td>
-                        <td><span class="badge bg-${pkg.is_active ? 'success' : 'danger'}">${pkg.is_active ? 'Hoạt động' : 'Hết hạn'}</span></td>
+                        <td>${formatDate(pkg.end_date || pkg.expire_date)}</td>
+                        <td><span class="badge bg-${pkg.status === 'active' ? 'success' : 'danger'}">${pkg.status === 'active' ? 'Hoạt động' : 'Hết hạn'}</span></td>
                     </tr>
                 `).join('');
             } catch (error) {

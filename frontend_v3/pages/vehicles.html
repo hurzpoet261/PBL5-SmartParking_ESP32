@@ -140,9 +140,7 @@
                         <td>${vehicle.customer_name || 'N/A'}</td>
                         <td><span class="badge bg-${vehicle.is_active ? 'success' : 'secondary'}">${vehicle.is_active ? 'Hoạt động' : 'Ngừng'}</span></td>
                         <td>
-                            <button class="btn btn-sm btn-danger" onclick="deleteVehicle('${vehicle.vehicle_id}')">
-                                <i class="bi bi-trash"></i>
-                            </button>
+                            <span class="text-muted">Chưa hỗ trợ xóa</span>
                         </td>
                     </tr>
                 `).join('');

@@ -19,36 +19,28 @@ async function loadParkingMap() {
         // Sửa lại điều kiện kiểm tra biến map và total_slots
         if (!result.map || result.total_slots === 0) {
             showToast('Chưa có chỗ đỗ nào. Vui lòng khởi tạo dữ liệu.', 'warning');
+            document.getElementById('availableCount').textContent = '0';
+            document.getElementById('occupiedCount').textContent = '0';
+            document.getElementById('reservedCount').textContent = '0';
+            document.getElementById('maintenanceCount').textContent = '0';
+            document.getElementById('parkingGrid').innerHTML = '';
             return;
         }
         
         // Rút trích tất cả các ô đỗ xe từ các hàng (row) gộp thành 1 mảng
         const slots = Object.values(result.map).flat();
         const grid = document.getElementById('parkingGrid');
+        const statistics = result.statistics || {};
         
-        // Count by status
-        const counts = {
-            available: 0,
-            occupied: 0,
-            reserved: 0,
-            maintenance: 0
-        };
+        document.getElementById('availableCount').textContent = statistics.available || 0;
+        document.getElementById('occupiedCount').textContent = statistics.occupied || 0;
+        document.getElementById('reservedCount').textContent = statistics.reserved || 0;
+        document.getElementById('maintenanceCount').textContent = statistics.maintenance || 0;
         
-        slots.forEach(slot => {
-            counts[slot.status] = (counts[slot.status] || 0) + 1;
-        });
-        
-        // Update counts
-        document.getElementById('availableCount').textContent = counts.available || 0;
-        document.getElementById('occupiedCount').textContent = counts.occupied || 0;
-        document.getElementById('reservedCount').textContent = counts.reserved || 0;
-        document.getElementById('maintenanceCount').textContent = counts.maintenance || 0;
-        
-        // Render grid
         grid.innerHTML = slots.map(slot => `
             <div class="parking-slot ${slot.status}" onclick="showSlotDetails('${slot.slot_id}')">
                 <div><i class="bi bi-car-front-fill"></i></div>
-                <div>${slot.slot_number}</div>
+                <div>${slot.slot_number || slot.slot_id}</div>
             </div>
         `).join('');
         

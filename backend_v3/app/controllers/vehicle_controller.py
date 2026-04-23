@@ -20,6 +20,7 @@ async def get_vehicles(
     limit: int = Query(100, ge=1, le=1000),
     vehicle_type: Optional[str] = None,
     customer_id: Optional[str] = None,
+    plate_number: Optional[str] = None,
     db: AsyncIOMotorDatabase = Depends(get_database)
 ):
     """Get list of vehicles"""
@@ -30,14 +31,25 @@ async def get_vehicles(
     
     if customer_id:
         query["customer_id"] = customer_id
+
+    if plate_number:
+        query["plate_number"] = {"$regex": plate_number, "$options": "i"}
     
     total = await db.vehicles.count_documents(query)
     vehicles = await db.vehicles.find(query).skip(skip).limit(limit).to_list(length=limit)
+
+    enriched_vehicles = []
+    for vehicle in vehicles:
+        customer = await db.customers.find_one({"customer_id": vehicle.get("customer_id")})
+        enriched_vehicles.append({
+            **serialize_mongodb_document(vehicle),
+            "customer_name": customer.get("name") if customer else "N/A"
+        })
     
     return {
         "success": True,
         "total": total,
-        "data": serialize_list(vehicles)
+        "data": serialize_list(enriched_vehicles)
     }
 
 
