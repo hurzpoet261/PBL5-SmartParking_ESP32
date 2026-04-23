@@ -231,6 +231,12 @@
                         document.getElementById('cardUid').value = result.card_uid;
                         showToast('✅ Đã quét thẻ: ' + result.card_uid, 'success');
                         stopAutoFetch();
+                    } else if (result && result.success === false && result.message) {
+                        console.log('Chưa có thẻ mới trong hàng chờ đăng ký');
+                        if (fetchAttempts >= MAX_ATTEMPTS) {
+                            showToast('Hết thời gian chờ. Vui lòng thử lại.', 'warning');
+                            stopAutoFetch();
+                        }
                     } else if (fetchAttempts >= MAX_ATTEMPTS) {
                         showToast('Hết thời gian chờ. Vui lòng thử lại.', 'warning');
                         stopAutoFetch();
