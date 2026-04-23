@@ -309,6 +309,16 @@ async def rfid_scan(request: RFIDScanRequest, db: AsyncIOMotorDatabase = Depends
         # Generate IDs
         customer_id = await generate_id(db, "customers", "C")
         vehicle_id = await generate_id(db, "vehicles", "V")
+
+        # Find available slot before creating new records
+        available_slot = await db.parking_slots.find_one({"status": SlotStatus.AVAILABLE.value})
+
+        if not available_slot:
+            return {
+                "success": False,
+                "action": "denied",
+                "message": "Bãi đỗ xe đã đầy.",
+            }
         
         # Create customer
         customer = {
@@ -354,16 +364,6 @@ async def rfid_scan(request: RFIDScanRequest, db: AsyncIOMotorDatabase = Depends
             "notes": "Tự động tạo"
         }
         await db.rfid_cards.insert_one(card_doc)
-        
-        # Find available slot
-        available_slot = await db.parking_slots.find_one({"status": SlotStatus.AVAILABLE.value})
-        
-        if not available_slot:
-            return {
-                "success": False,
-                "action": "denied",
-                "message": "Bãi đỗ xe đã đầy.",
-            }
         
         # Create first session
         session_id = await generate_id(db, "sessions", "S")
