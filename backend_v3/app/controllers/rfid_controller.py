@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+REGISTRATION_MODE = {
+    "enabled": False,
+    "started_at": None,
+}
+
 
 class RFIDScanRequest(BaseModel):
     """RFID Scan request from ESP32"""
@@ -27,6 +32,39 @@ class RFIDScanRequest(BaseModel):
     gate_id: int = Field(1, description="Gate ID")
     distance_cm: Optional[float] = Field(None, description="Distance from ultrasonic sensor")
     timestamp: Optional[float] = Field(None, description="Timestamp from device (currently ignored; server time is authoritative)")
+
+
+@router.post("/registration-mode/start")
+async def start_registration_mode(db: AsyncIOMotorDatabase = Depends(get_database)):
+    """Enable registration mode so new RFID scans are reserved for web registration."""
+    REGISTRATION_MODE["enabled"] = True
+    REGISTRATION_MODE["started_at"] = datetime.now().isoformat()
+    await db.pending_scans.delete_many({})
+    return {
+        "success": True,
+        "message": "Registration mode enabled",
+        "started_at": REGISTRATION_MODE["started_at"]
+    }
+
+
+@router.post("/registration-mode/stop")
+async def stop_registration_mode():
+    """Disable registration mode and return to normal walk-in behavior."""
+    REGISTRATION_MODE["enabled"] = False
+    REGISTRATION_MODE["started_at"] = None
+    return {
+        "success": True,
+        "message": "Registration mode disabled"
+    }
+
+
+@router.get("/registration-mode")
+async def get_registration_mode_status():
+    return {
+        "success": True,
+        "enabled": REGISTRATION_MODE["enabled"],
+        "started_at": REGISTRATION_MODE["started_at"]
+    }
 
 
 @router.get("/latest-scan")
@@ -311,12 +349,122 @@ async def rfid_scan(request: RFIDScanRequest, db: AsyncIOMotorDatabase = Depends
             }
     
     else:
-        # NEW CARD - Registration mode only
-        logger.info(f"🆕 NEW CARD - Pending registration: {card_uid}")
+        if REGISTRATION_MODE["enabled"]:
+            logger.info(f"🆕 NEW CARD - Pending registration: {card_uid}")
+            return {
+                "success": False,
+                "action": "pending_registration",
+                "message": "Thẻ mới đã được ghi nhận. Vui lòng hoàn tất đăng ký trên web trước khi sử dụng.",
+                "card_uid": card_uid
+            }
 
+        # NEW CARD - Auto registration for walk-in customer
+        logger.info(f"🆕 NEW CARD - Auto registration: {card_uid}")
+        
+        # Generate IDs
+        customer_id = await generate_id(db, "customers", "C")
+        vehicle_id = await generate_id(db, "vehicles", "V")
+
+        # Find available slot before creating new records
+        available_slot = await db.parking_slots.find_one({"status": SlotStatus.AVAILABLE.value})
+
+        if not available_slot:
+            return {
+                "success": False,
+                "action": "denied",
+                "message": "Bãi đỗ xe đã đầy.",
+            }
+        
+        # Create customer
+        customer = {
+            "customer_id": customer_id,
+            "name": f"Khách hàng {customer_id}",
+            "phone": None,
+            "email": None,
+            "address": None,
+            "id_card": None,
+            "customer_type": CustomerType.WALK_IN.value,
+            "balance": 0.0,
+            "created_at": dt,
+            "updated_at": dt,
+            "is_active": True,
+            "notes": "Tự động tạo khi quét thẻ mới"
+        }
+        await db.customers.insert_one(customer)
+        
+        # Create vehicle
+        vehicle = {
+            "vehicle_id": vehicle_id,
+            "customer_id": customer_id,
+            "plate_number": f"XX-{vehicle_id[-4:]}",
+            "vehicle_type": "motorbike",
+            "brand": None,
+            "model": None,
+            "color": None,
+            "created_at": dt,
+            "updated_at": dt,
+            "is_active": True
+        }
+        await db.vehicles.insert_one(vehicle)
+        
+        # Create RFID card
+        card_doc = {
+            "card_uid": card_uid,
+            "customer_id": customer_id,
+            "vehicle_id": vehicle_id,
+            "status": "active",
+            "issued_at": dt,
+            "expire_at": None,
+            "created_at": dt,
+            "notes": "Tự động tạo"
+        }
+        await db.rfid_cards.insert_one(card_doc)
+        
+        # Create first session
+        session_id = await generate_id(db, "sessions", "S")
+        
+        session = {
+            "session_id": session_id,
+            "card_uid": card_uid,
+            "customer_id": customer_id,
+            "vehicle_id": vehicle_id,
+            "slot_id": available_slot["slot_id"],
+            "entry_gate_id": gate_id,
+            "exit_gate_id": None,
+            "entry_time": dt,
+            "exit_time": None,
+            "distance_cm": distance,
+            "status": SessionStatus.IN_PROGRESS.value,
+            "parking_fee": 0.0,
+            "created_at": dt
+        }
+        
+        await db.sessions.insert_one(session)
+        
+        # Occupy slot
+        await db.parking_slots.update_one(
+            {"slot_id": available_slot["slot_id"]},
+            {
+                "$set": {
+                    "status": SlotStatus.OCCUPIED.value,
+                    "vehicle_id": vehicle_id,
+                    "session_id": session_id,
+                    "updated_at": dt
+                }
+            }
+        )
+        
+        logger.info(f"✅ Created: {customer_id}, {vehicle_id}, {card_uid}")
+        
         return {
-            "success": False,
-            "action": "pending_registration",
-            "message": "Thẻ mới đã được ghi nhận. Vui lòng hoàn tất đăng ký trên web trước khi sử dụng.",
-            "card_uid": card_uid
+            "success": True,
+            "action": "new_registration",
+            "message": "Thẻ mới - Đã tự động đăng ký!",
+            "customer_name": customer["name"],
+            "customer_id": customer_id,
+            "vehicle_plate": vehicle["plate_number"],
+            "vehicle_id": vehicle_id,
+            "card_uid": card_uid,
+            "session_id": session_id,
+            "slot_id": available_slot["slot_id"]
         }

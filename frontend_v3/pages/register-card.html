@@ -206,8 +206,14 @@
         let fetchAttempts = 0;
         const MAX_ATTEMPTS = 60; // 60 attempts * 2 seconds = 2 minutes
         
-        function startAutoFetch() {
+        async function startAutoFetch() {
             if (autoFetchInterval) return;
+
+            const modeResult = await api.post('/rfid/registration-mode/start', {});
+            if (!modeResult || !modeResult.success) {
+                showToast('Không thể bật chế độ đăng ký thẻ', 'danger');
+                return;
+            }
             
             isAutoFetching = true;
             fetchAttempts = 0;
@@ -251,13 +257,15 @@
             }, 2000); // Check every 2 seconds
         }
         
-        function stopAutoFetch() {
+        async function stopAutoFetch() {
             if (autoFetchInterval) {
                 clearInterval(autoFetchInterval);
                 autoFetchInterval = null;
             }
             isAutoFetching = false;
             fetchAttempts = 0;
+
+            await api.post('/rfid/registration-mode/stop', {});
             
             const btn = document.getElementById('scanCardBtn');
             btn.innerHTML = '<i class="bi bi-upc-scan"></i> Quét thẻ';
@@ -294,6 +302,10 @@
                 const cardUid = document.getElementById('cardUid').value.trim();
                 if (!cardUid) {
                     throw new Error('Vui lòng nhập hoặc quét mã thẻ RFID');
+                }
+
+                if (isAutoFetching) {
+                    await stopAutoFetch();
                 }
                 
                 // Create customer
@@ -366,8 +378,9 @@
                     console.log('Package result:', pkgResult);
                 }
                 
-                // Clear the pending scan
+                // Clear the pending scan and stop registration mode
                 await api.delete('/rfid/latest-scan');
+                await api.post('/rfid/registration-mode/stop', {});
                 
                 showToast('✅ Đăng ký thành công!', 'success');
                 setTimeout(() => {
