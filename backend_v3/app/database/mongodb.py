@@ -103,6 +103,17 @@ class MongoDB:
             await cls.db.transactions.create_index([("transaction_id", ASCENDING)], unique=True)
             await cls.db.transactions.create_index([("customer_id", ASCENDING)])
             await cls.db.transactions.create_index([("created_at", DESCENDING)])
+
+            # Camera capture indexes
+            await cls.db.camera_captures.create_index([("captured_at", DESCENDING)])
+            await cls.db.camera_captures.create_index([("card_uid", ASCENDING), ("captured_at", DESCENDING)])
+            await cls.db.camera_captures.create_index([("capture_batch_id", ASCENDING), ("frame_no", ASCENDING)])
+            await cls.db["camera_images.files"].create_index(
+                [("metadata.card_uid", ASCENDING), ("uploadDate", DESCENDING)]
+            )
+            await cls.db["camera_images.files"].create_index(
+                [("metadata.capture_batch_id", ASCENDING), ("metadata.frame_no", ASCENDING)]
+            )
             
             logger.info("✅ Database indexes created")
             

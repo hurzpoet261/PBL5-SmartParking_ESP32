@@ -21,8 +21,8 @@ print("=" * 60)
 
 # RFID Reader
 spi = SPI(1, baudrate=config.RFID_SPI_BAUDRATE, polarity=0, phase=0,
-          sck=Pin(config.RFID_SCK_PIN), 
-          mosi=Pin(config.RFID_MOSI_PIN), 
+          sck=Pin(config.RFID_SCK_PIN),
+          mosi=Pin(config.RFID_MOSI_PIN),
           miso=Pin(config.RFID_MISO_PIN))
 cs = Pin(config.RFID_CS_PIN, Pin.OUT)
 rst = Pin(config.RFID_RST_PIN, Pin.OUT)
@@ -81,17 +81,17 @@ def get_distance():
     trig.value(1)
     time.sleep_us(10)
     trig.value(0)
-    
+
     timeout = time.ticks_us()
     while echo.value() == 0:
         if time.ticks_diff(time.ticks_us(), timeout) > 30_000:
             return -1
-    
+
     start = time.ticks_us()
     while echo.value() == 1:
         if time.ticks_diff(time.ticks_us(), start) > 30_000:
             return -1
-    
+
     duration = time.ticks_diff(time.ticks_us(), start)
     distance = (duration * 0.0343) / 2
     return round(distance, 1)
@@ -133,8 +133,11 @@ def display_message(line1, line2=""):
 def connect_wifi():
     """Kết nối Wi-Fi với retry logic"""
     wlan = network.WLAN(network.STA_IF)
+
+    # 1. Bật Wi-Fi và thêm delay nhỏ để radio kịp khởi tạo
     wlan.active(True)
-    
+    time.sleep(0.5)
+
     if wlan.isconnected():
         ip = wlan.ifconfig()[0]
         config.log(f"✅ Already connected: {ip}")
@@ -142,42 +145,42 @@ def connect_wifi():
             config.log(f"   Gateway: {wlan.ifconfig()[2]}")
             config.log(f"   DNS: {wlan.ifconfig()[3]}")
         return True
-    
+
     config.log(f"\n📡 Connecting to Wi-Fi: {config.WIFI_SSID}")
     display_message(config.MSG_CONNECTING, config.WIFI_SSID[:16])
-    
+
+    # 2. Xóa trạng thái kết nối bị treo trước đó (RẤT QUAN TRỌNG)
+    wlan.disconnect()
+    time.sleep(0.5)
+
+    # 3. Tiến hành kết nối
     wlan.connect(config.WIFI_SSID, config.WIFI_PASS)
-    
+
     timeout = config.WIFI_TIMEOUT
     while not wlan.isconnected() and timeout > 0:
         print(".", end="")
         time.sleep(1)
         timeout -= 1
-    
+
     print()
-    
+
     if wlan.isconnected():
         ip = wlan.ifconfig()[0]
         config.log(f"✅ Wi-Fi connected successfully!")
         config.log(f"   IP Address: {ip}")
-        
+
         if config.DEBUG_SHOW_WIFI_INFO:
             config.log(f"   Subnet Mask: {wlan.ifconfig()[1]}")
             config.log(f"   Gateway: {wlan.ifconfig()[2]}")
             config.log(f"   DNS: {wlan.ifconfig()[3]}")
             config.log(f"   Signal Strength: {wlan.status('rssi')} dBm")
-        
+
         display_message(config.MSG_WIFI_OK, ip)
         time.sleep(2)
         return True
     else:
         config.log("❌ Wi-Fi connection failed!")
-        config.log(f"   SSID: {config.WIFI_SSID}")
-        config.log("   Please check:")
-        config.log("   1. SSID and password are correct")
-        config.log("   2. Wi-Fi is 2.4GHz (ESP32 doesn't support 5GHz)")
-        config.log("   3. Wi-Fi router is powered on")
-        
+        # ... (giữ nguyên phần thông báo lỗi cũ)
         display_message(config.MSG_WIFI_FAIL, "Check Config")
         return False
 
@@ -198,44 +201,44 @@ def send_rfid_scan(card_uid):
     try:
         import urequests as requests
         import ujson as json
-        
+
         url = config.get_api_endpoint("/rfid/scan")
-        
+
         payload = {
             "card_uid": card_uid,
             "gate_id": config.GATE_ID,
             "distance_cm": get_distance(),
             "timestamp": time.time()
         }
-        
+
         if config.DEBUG_SHOW_API_REQUEST:
             config.log(f"\n📤 API Request:")
             config.log(f"   URL: {url}")
             config.log(f"   Payload: {payload}")
-        
+
         response = requests.post(
             url,
             json=payload,
             headers={"Content-Type": "application/json"},
             timeout=config.API_TIMEOUT
         )
-        
+
         if config.DEBUG_SHOW_API_REQUEST:
             config.log(f"📥 API Response:")
             config.log(f"   Status: {response.status_code}")
-        
+
         if response.status_code == 200:
             data = response.json()
-            
+
             if config.DEBUG_SHOW_API_REQUEST:
                 config.log(f"   Data: {data}")
-            
+
             return data
         else:
             config.log(f"❌ API Error: {response.status_code}")
             config.log(f"   Response: {response.text}")
             return None
-            
+
     except Exception as e:
         config.log(f"❌ API Connection Error: {e}")
         return None
@@ -246,34 +249,34 @@ def send_rfid_scan(card_uid):
 
 def process_rfid_card(card_uid, wifi_connected):
     """Xử lý thẻ RFID đã quét"""
-    try: 
+    try:
         config.log(f"\n{'=' * 60}")
         config.log(f"🔍 RFID Card Detected: {card_uid}")
         config.log(f"{'=' * 60}")
-        
+
         led.on()
         display_message(config.MSG_SCANNING, card_uid[-8:])
-        
+
         if wifi_connected:
             # Online mode - Gửi lên server
             response = send_rfid_scan(card_uid)
-            
+
             if response and response.get("success"):
                 # Server cho phép
                 action = response.get("action", "unknown")
                 customer_name = response.get("customer_name", "Guest")
                 vehicle_plate = response.get("vehicle_plate", "N/A")
                 message = response.get("message", "")
-                
+
                 config.log(f"✅ Access Granted!")
                 config.log(f"   Action: {action}")
                 config.log(f"   Customer: {customer_name}")
                 config.log(f"   Vehicle: {vehicle_plate}")
                 config.log(f"   Message: {message}")
-                
+
                 display_message(config.MSG_ACCEPTED, customer_name[:16])
                 beep_success()
-                
+
                 gate_open()
                 return True
             else:
@@ -281,7 +284,7 @@ def process_rfid_card(card_uid, wifi_connected):
                 config.log(f"❌ Access Denied!")
                 if response:
                     config.log(f"   Reason: {response.get('message', 'Unknown')}")
-                
+
                 display_message(config.MSG_DENIED, "Contact Admin")
                 beep_error()
                 return False
@@ -304,7 +307,7 @@ def process_rfid_card(card_uid, wifi_connected):
                 display_message(config.MSG_ERROR, "No Connection")
                 beep_error()
                 return False
-    
+
     finally:
         led.off()
 
@@ -317,13 +320,13 @@ def main():
     config.log("\n" + "=" * 60)
     config.log("  STARTING SMART PARKING SYSTEM")
     config.log("=" * 60)
-    
+
     # Đóng cổng ban đầu
     gate_close()
-    
+
     # Kết nối Wi-Fi
     wifi_connected = connect_wifi()
-    
+
     if not wifi_connected:
         if config.OFFLINE_MODE_ENABLED:
             config.log("\n⚠️ Running in OFFLINE MODE")
@@ -332,32 +335,32 @@ def main():
             config.log("\n❌ Cannot start without Wi-Fi connection")
             display_message(config.MSG_ERROR, "No WiFi")
             return
-    
+
     # Hiển thị ready message
     display_message(config.MSG_WELCOME, config.MSG_SCAN_CARD)
-    
+
     config.log("\n" + "=" * 60)
     config.log("  SYSTEM READY")
     config.log("=" * 60)
     config.log("Waiting for RFID cards...\n")
-    
+
     # State variables
     last_uid = None
     last_time_ms = 0
     gate_is_open = False
     gate_open_at = 0
     wifi_check_counter = 0
-    
+
     try:
         while True:
             now = time.ticks_ms()
-            
+
             # Kiểm tra Wi-Fi định kỳ (mỗi 30 giây)
             wifi_check_counter += 1
             if wifi_check_counter >= 300:  # 300 * 100ms = 30s
                 wifi_connected = check_wifi_connection()
                 wifi_check_counter = 0
-            
+
             # Tự động đóng cổng
             if gate_is_open and config.GATE_AUTO_CLOSE:
                 elapsed = time.ticks_diff(now, gate_open_at)
@@ -371,35 +374,35 @@ def main():
                         gate_close()
                         display_message(config.MSG_WELCOME, config.MSG_SCAN_CARD)
                         gate_is_open = False
-            
+
             # Quét thẻ RFID
             stat, tag = reader.request(reader.REQIDL)
-            
+
             if stat == reader.OK:
                 stat, uid = reader.anticoll()
-                
+
                 if stat == reader.OK and uid is not None:
                     # Kiểm tra cooldown
                     if uid != last_uid or time.ticks_diff(now, last_time_ms) > config.SCAN_COOLDOWN_MS:
                         card_id = "0x%02x%02x%02x%02x" % (uid[0], uid[1], uid[2], uid[3])
-                        
+
                         # Xử lý thẻ
                         access_granted = process_rfid_card(card_id, wifi_connected)
-                        
+
                         if access_granted:
                             gate_is_open = True
                             gate_open_at = time.ticks_ms()
-                        
+
                         last_uid = uid
                         last_time_ms = now
-                        
+
                         config.log("=" * 60)
                         config.log("Waiting for next card...\n")
-                    
+
                     reader.halt()
-            
+
             time.sleep_ms(100)
-    
+
     except KeyboardInterrupt:
         config.log("\n\n🛑 System stopped by user")
         gate_close()

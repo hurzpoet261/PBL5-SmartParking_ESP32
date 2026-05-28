@@ -7,8 +7,8 @@ Cấu hình tập trung cho toàn bộ hệ thống ESP32
 # WI-FI CONFIGURATION
 # ═══════════════════════════════════════════════════
 
-WIFI_SSID = "Thu Trinh 1"           # ⚠️ THAY ĐỔI: Tên Wi-Fi của bạn
-WIFI_PASS = "phu760077"             # ⚠️ THAY ĐỔI: Mật khẩu Wi-Fi
+WIFI_SSID = "S House"
+WIFI_PASS = "Phuocbaotinh"           # ⚠️ THAY ĐỔI: Mật khẩu Wi-Fi
 WIFI_TIMEOUT = 20                    # Timeout kết nối (giây)
 WIFI_RETRY_DELAY = 5                 # Delay giữa các lần thử lại (giây)
 
@@ -16,9 +16,21 @@ WIFI_RETRY_DELAY = 5                 # Delay giữa các lần thử lại (giâ
 # BACKEND API CONFIGURATION
 # ═══════════════════════════════════════════════════
 
-API_BASE_URL = "http://192.168.1.235:8000/api/v1"  # ⚠️ THAY ĐỔI: IP máy tính chạy backend
+API_BASE_URL = "http://10.209.222.150:8000/api/v1"  # ⚠️ THAY ĐỔI: IP máy tính chạy backend
 API_TIMEOUT = 10                     # Timeout cho API request (giây)
 API_RETRY = 3                        # Số lần thử lại khi lỗi
+
+# ═══════════════════════════════════════════════════
+# MQTT CONFIGURATION (ESP32 thường -> Python camera_bridge.py)
+# ═══════════════════════════════════════════════════
+
+MQTT_BROKER = "broker.hivemq.com"
+MQTT_PORT = 1883
+MQTT_KEEPALIVE = 60
+MQTT_CLIENT_ID = "esp32-gate-01"
+MQTT_TOPIC_RFID = "pbl5/smartparking/rfid_scanned"
+MQTT_TOPIC_GATE = "pbl5/smartparking/gate"
+MQTT_RECONNECT_DELAY = 5
 
 # ═══════════════════════════════════════════════════
 # GATE CONFIGURATION
@@ -56,7 +68,7 @@ BUZZER_PIN = 13
 # Ultrasonic Sensor (HC-SR04)
 ULTRASONIC_TRIG_PIN = 26
 ULTRASONIC_ECHO_PIN = 35
-ULTRASONIC_THRESHOLD_CM = 30         # Khoảng cách phát hiện người (cm)
+ULTRASONIC_THRESHOLD_CM = 10         # Khoảng cách phát hiện người (cm)
 
 # LCD I2C Display
 LCD_I2C_ADDR = 0x27                  # Địa chỉ I2C (thử 0x3F nếu không hoạt động)

@@ -53,6 +53,7 @@ frontend/.git/
 # Common generated folders inside this project
 backend/**/__pycache__/
 backend/**/*.pyc
+backend_v3/captured_images/
 server/**/__pycache__/
 server/**/*.pyc
 frontend/node_modules/

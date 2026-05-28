@@ -17,7 +17,8 @@ from app.controllers import (
     session_controller,
     slot_controller,
     package_controller,
-    stats_controller
+    stats_controller,
+    camera_bridge_controller
 )
 
 # Setup logging
@@ -93,7 +94,17 @@ async def root():
             "sessions": "/api/v1/sessions",
             "slots": "/api/v1/slots",
             "packages": "/api/v1/packages",
-            "stats": "/api/v1/stats"
+            "stats": "/api/v1/stats",
+            "camera_bridge_test": {
+                "status": "GET /api/v1/camera_bridge/status",
+                "trigger_manual": "POST /api/v1/camera_bridge/trigger-manual",
+                "test_ocr": "POST /api/v1/camera_bridge/test-ocr",
+                "test_preprocess": "POST /api/v1/camera_bridge/test-preprocess",
+                "test_verify": "POST /api/v1/camera_bridge/test-verify",
+                "test_database": "GET /api/v1/camera_bridge/test-database",
+                "captured_images": "GET /api/v1/camera_bridge/captured-images",
+                "workflow_example": "GET /api/v1/camera_bridge/test/example-workflow"
+            }
         }
     }
 
@@ -178,6 +189,13 @@ app.include_router(
     stats_controller.router,
     prefix="/api/v1/stats",
     tags=["Statistics"]
+)
+
+# Camera Bridge Controller (Test endpoints)
+app.include_router(
+    camera_bridge_controller.router,
+    prefix="/api/v1/camera_bridge",
+    tags=["Camera Bridge - Testing"]
 )
 
 
