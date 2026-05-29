@@ -105,10 +105,12 @@ async def get_bridge_status():
             raise HTTPException(status_code=503, detail="Camera bridge not available - failed to load module")
 
         queue_size = cb.task_queue.qsize()
+        runtime = getattr(cb, "runtime", None)
 
         return {
             "status": "online",
-            "ocr_model_loaded": cb.ocr_reader is not None,
+            "ocr_model_loaded": bool(getattr(runtime, "ocr_loaded", False)),
+            "plate_detector_loaded": bool(getattr(runtime, "detector_loaded", False)),
             "mongodb_connected": cb.db is not None,
             "mqtt_client": "configured",
             "queue_size": queue_size,
@@ -118,8 +120,9 @@ async def get_bridge_status():
                 "mqtt_broker": cb.MQTT_BROKER,
                 "save_dir": cb.SAVE_DIR,
                 "store_captured_images_in_db": cb.STORE_CAPTURED_IMAGES_IN_DB,
-                "capture_image_bucket": cb.CAPTURE_IMAGE_BUCKET,
-                "capture_metadata_collection": cb.CAPTURE_METADATA_COLLECTION
+                "capture_metadata_collection": cb.CAPTURE_METADATA_COLLECTION,
+                "plate_detector_model": cb.PLATE_DETECTOR_MODEL,
+                "backend_access_event_url": cb.BACKEND_ACCESS_EVENT_URL
             }
         }
     except Exception as e:
@@ -162,8 +165,9 @@ async def test_ocr(image_file: UploadFile = File(...)):
         if not cb:
             raise HTTPException(status_code=503, detail="Camera bridge not available - failed to load module")
 
-        if not cb.ocr_reader:
-            raise HTTPException(status_code=503, detail="EasyOCR model not loaded")
+        cb.init_resources()
+        if not getattr(cb.runtime, "ocr_loaded", False):
+            raise HTTPException(status_code=503, detail="PaddleOCR model not loaded")
 
         # Save uploaded file to temp directory
         with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:

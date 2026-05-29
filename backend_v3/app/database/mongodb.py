@@ -108,12 +108,25 @@ class MongoDB:
             await cls.db.camera_captures.create_index([("captured_at", DESCENDING)])
             await cls.db.camera_captures.create_index([("card_uid", ASCENDING), ("captured_at", DESCENDING)])
             await cls.db.camera_captures.create_index([("capture_batch_id", ASCENDING), ("frame_no", ASCENDING)])
+            await cls.db.camera_captures.create_index([("event_id", ASCENDING)])
+            await cls.db.camera_captures.create_index([("session_id", ASCENDING)])
             await cls.db["camera_images.files"].create_index(
                 [("metadata.card_uid", ASCENDING), ("uploadDate", DESCENDING)]
             )
             await cls.db["camera_images.files"].create_index(
                 [("metadata.capture_batch_id", ASCENDING), ("metadata.frame_no", ASCENDING)]
             )
+
+            # Parking event audit indexes
+            await cls.db.parking_events.create_index([("event_id", ASCENDING)], unique=True)
+            await cls.db.parking_events.create_index(
+                [("capture_batch_id", ASCENDING)],
+                unique=True,
+                sparse=True,
+            )
+            await cls.db.parking_events.create_index([("card_uid", ASCENDING), ("created_at", DESCENDING)])
+            await cls.db.parking_events.create_index([("session_id", ASCENDING)])
+            await cls.db.parking_events.create_index([("decision", ASCENDING), ("created_at", DESCENDING)])
             
             logger.info("✅ Database indexes created")
             

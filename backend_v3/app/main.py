@@ -6,10 +6,12 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
+import asyncio
 import logging
 
 from app.config import settings
 from app.database.mongodb import MongoDB
+from app.services.gate_mqtt import gate_mqtt_publisher
 from app.controllers import (
     rfid_controller,
     customer_controller,
@@ -18,7 +20,8 @@ from app.controllers import (
     slot_controller,
     package_controller,
     stats_controller,
-    camera_bridge_controller
+    camera_bridge_controller,
+    access_event_controller
 )
 
 # Setup logging
@@ -36,12 +39,18 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("🚀 Starting Smart Parking API V3.0...")
     await MongoDB.connect_db()
+    mqtt_ready = await asyncio.to_thread(gate_mqtt_publisher.ensure_connected, 5.0)
+    if mqtt_ready:
+        logger.info("[MQTT] Backend gate publisher is ready")
+    else:
+        logger.warning("[MQTT] Backend gate publisher is not connected; entry will reject until MQTT is ready")
     logger.info("✅ Application started successfully")
     
     yield
     
     # Shutdown
     logger.info("🛑 Shutting down...")
+    gate_mqtt_publisher.close()
     await MongoDB.close_db()
     logger.info("✅ Application stopped")
 
@@ -104,7 +113,18 @@ async def root():
                 "test_database": "GET /api/v1/camera_bridge/test-database",
                 "captured_images": "GET /api/v1/camera_bridge/captured-images",
                 "workflow_example": "GET /api/v1/camera_bridge/test/example-workflow"
-            }
+            },
+            "access_events": {
+                "rfid_camera": "POST /api/v1/access-events/rfid-camera (gate_direction=auto|entry|exit)",
+                "captures": "GET /api/v1/access-events/captures",
+                "events": "GET /api/v1/access-events/events",
+                "image_quality": "GET /api/v1/access-events/debug/images/{gridfs_file_id}/quality",
+                "image_roi": "GET /api/v1/access-events/debug/images/{gridfs_file_id}/roi",
+                "image_preprocess": "GET /api/v1/access-events/debug/images/{gridfs_file_id}/preprocess",
+                "dev_reset_active_session": "POST /api/v1/access-events/dev/reset-active-session/{card_uid}",
+                "dev_cleanup_active_sessions": "POST /api/v1/access-events/dev/cleanup-active-sessions",
+                "view_image": "GET /api/v1/access-events/images/{gridfs_file_id}"
+            },
         }
     }
 
@@ -196,6 +216,13 @@ app.include_router(
     camera_bridge_controller.router,
     prefix="/api/v1/camera_bridge",
     tags=["Camera Bridge - Testing"]
+)
+
+# Access Event Controller (production camera/RFID decision flow)
+app.include_router(
+    access_event_controller.router,
+    prefix="/api/v1/access-events",
+    tags=["Access Events"]
 )
 
 
