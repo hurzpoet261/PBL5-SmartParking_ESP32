@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Map chỗ đỗ - Smart Parking</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link rel="stylesheet" href="../assets/css/parking-map.css">
+</head>
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h4><i class="bi bi-car-front-fill"></i> Smart Parking</h4>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="../index.html" class="nav-link">
+                <i class="bi bi-speedometer2"></i> Dashboard
+            </a>
+            <a href="register-card.html" class="nav-link">
+                <i class="bi bi-credit-card-2-front"></i> Đăng ký thẻ
+            </a>
+            <a href="customers.html" class="nav-link">
+                <i class="bi bi-people"></i> Khách hàng
+            </a>
+            <a href="vehicles.html" class="nav-link">
+                <i class="bi bi-car-front"></i> Xe
+            </a>
+            <a href="parking-map.html" class="nav-link active">
+                <i class="bi bi-grid-3x3"></i> Map chỗ đỗ
+            </a>
+            <a href="packages.html" class="nav-link">
+                <i class="bi bi-box-seam"></i> Gói cước
+            </a>
+            <a href="sessions.html" class="nav-link">
+                <i class="bi bi-clock-history"></i> Lịch sử
+            </a>
+            <a href="revenue.html" class="nav-link">
+                <i class="bi bi-graph-up"></i> Doanh thu
+            </a>
+        </nav>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="header">
+            <h2><i class="bi bi-grid-3x3"></i> Map chỗ đỗ xe</h2>
+            <div class="header-actions">
+                <button class="btn btn-primary btn-sm" onclick="loadParkingMap()">
+                    <i class="bi bi-arrow-clockwise"></i> Làm mới
+                </button>
+            </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="d-flex gap-4 flex-wrap">
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="legend-box available"></div>
+                        <span>Trống (<span id="availableCount">0</span>)</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="legend-box occupied"></div>
+                        <span>Đang đỗ (<span id="occupiedCount">0</span>)</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="legend-box reserved"></div>
+                        <span>Đặt trước (<span id="reservedCount">0</span>)</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="legend-box maintenance"></div>
+                        <span>Bảo trì (<span id="maintenanceCount">0</span>)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Parking Grid -->
+        <div class="card">
+            <div class="card-body">
+                <div id="parkingGrid" class="parking-grid">
+                    <div class="text-center">Đang tải...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Slot Detail Modal -->
+    <div class="modal fade" id="slotModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Chi tiết chỗ đỗ</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="slotDetails">
+                    Loading...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../assets/js/api.js"></script>
+    <script src="../assets/js/parking-map.js"></script>
+</body>
+</html>
