@@ -18,7 +18,8 @@ from app.controllers import (
     slot_controller,
     package_controller,
     stats_controller,
-    camera_bridge_controller
+    camera_bridge_controller,
+    registration_controller,
 )
 
 # Setup logging
@@ -95,6 +96,7 @@ async def root():
             "sessions": "/api/v1/sessions",
             "slots": "/api/v1/slots",
             "packages": "/api/v1/packages",
+            "full_registration": "POST /api/v1/registrations/full",
             "stats": "/api/v1/stats",
             "camera_bridge_test": {
                 "status": "GET /api/v1/camera_bridge/status",
@@ -148,6 +150,13 @@ app.include_router(
     rfid_controller.router,
     prefix="/api/v1/rfid",
     tags=["RFID"]
+)
+
+# Full Registration Controller
+app.include_router(
+    registration_controller.router,
+    prefix="/api/v1/registrations",
+    tags=["Registrations"]
 )
 
 # Customer Controller

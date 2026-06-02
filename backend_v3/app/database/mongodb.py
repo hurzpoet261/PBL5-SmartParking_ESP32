@@ -77,6 +77,11 @@ class MongoDB:
             # Vehicles indexes
             await cls.db.vehicles.create_index([("vehicle_id", ASCENDING)], unique=True)
             await cls.db.vehicles.create_index([("plate_number", ASCENDING)], unique=True)
+            await cls.db.vehicles.create_index(
+                [("normalized_plate", ASCENDING)],
+                unique=True,
+                sparse=True,
+            )
             await cls.db.vehicles.create_index([("customer_id", ASCENDING)])
             
             # RFID Cards indexes
@@ -157,6 +162,17 @@ class MongoDB:
         await cls.db.parking_slots.create_index(
             [("status", ASCENDING), ("slot_id", ASCENDING)],
             name="slot_status_assignment",
+        )
+        await cls.db.packages.create_index(
+            [
+                ("customer_id", ASCENDING),
+                ("vehicle_id", ASCENDING),
+                ("status", ASCENDING),
+                ("expire_date", ASCENDING),
+                ("package_type", ASCENDING),
+                ("remaining_uses", ASCENDING),
+            ],
+            name="package_vehicle_eligibility",
         )
         await cls.db.transactions.create_index(
             [("session_id", ASCENDING)],

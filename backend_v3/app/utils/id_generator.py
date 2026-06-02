@@ -14,7 +14,13 @@ COUNTER_KEYS = {
 }
 
 
-async def generate_id(db: AsyncIOMotorDatabase, collection_name: str, prefix: str) -> str:
+async def generate_id(
+    db: AsyncIOMotorDatabase,
+    collection_name: str,
+    prefix: str,
+    *,
+    session=None,
+) -> str:
     """
     Generate unique ID using an atomic counter collection.
     Falls back cleanly for supported business collections.
@@ -27,6 +33,7 @@ async def generate_id(db: AsyncIOMotorDatabase, collection_name: str, prefix: st
         {"$inc": {"seq": 1}},
         upsert=True,
         return_document=ReturnDocument.AFTER,
+        session=session,
     )
 
     seq = counter.get("seq", 1)

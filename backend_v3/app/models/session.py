@@ -2,7 +2,7 @@
 Parking Session Model
 """
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Any, Dict, Optional
 from datetime import datetime
 from enum import Enum
 
@@ -34,6 +34,8 @@ class Session(BaseModel):
     status: SessionStatus = SessionStatus.IN_PROGRESS
     parking_fee: float = 0.0
     package_id: Optional[str] = None
+    package_type: Optional[str] = None
+    fee_breakdown: Optional[Dict[str, Any]] = None
     created_at: datetime = Field(default_factory=datetime.now)
 
 

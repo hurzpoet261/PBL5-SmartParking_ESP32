@@ -2,7 +2,7 @@
 Transaction Model (Giao dịch)
 """
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Any, Dict, Optional
 from datetime import datetime
 from enum import Enum
 
@@ -24,6 +24,7 @@ class Transaction(BaseModel):
     session_id: Optional[str] = None
     parking_fee_session_id: Optional[str] = None
     package_id: Optional[str] = None
+    fee_breakdown: Optional[Dict[str, Any]] = None
     payment_method: str = Field("cash", description="cash, card, wallet")
     description: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)

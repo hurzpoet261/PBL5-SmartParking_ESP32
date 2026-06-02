@@ -290,6 +290,14 @@
             document.querySelector(`input[value="${type}"]`).checked = true;
         }
 
+        function getApiError(result, fallback) {
+            const detail = result?.detail || result?.error;
+            if (Array.isArray(detail)) {
+                return detail.map(item => item.msg || JSON.stringify(item)).join('; ');
+            }
+            return detail || fallback;
+        }
+
         document.getElementById('registerForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -308,74 +316,35 @@
                     await stopAutoFetch();
                 }
                 
-                // Create customer
-                const customerData = {
-                    name: document.getElementById('customerName').value.trim(),
-                    phone: document.getElementById('customerPhone').value.trim(),
-                    email: document.getElementById('customerEmail').value.trim() || null,
-                    id_card: document.getElementById('customerIdCard').value.trim() || null,
-                    address: document.getElementById('customerAddress').value.trim() || null,
-                    customer_type: 'walk_in',
-                    notes: null
-                };
-                
-                console.log('Creating customer:', customerData);
-                const customerResult = await api.post('/customers', customerData);
-                console.log('Customer result:', customerResult);
-                
-                if (!customerResult || !customerResult.success) {
-                    throw new Error(customerResult?.error || 'Không thể tạo khách hàng');
-                }
-                
-                const customerId = customerResult.data.customer_id;
-                
-                // Create vehicle
-                const vehicleData = {
-                    customer_id: customerId,
-                    plate_number: document.getElementById('vehiclePlate').value.trim(),
-                    vehicle_type: document.getElementById('vehicleType').value,
-                    brand: document.getElementById('vehicleBrand').value.trim() || null,
-                    model: document.getElementById('vehicleModel').value.trim() || null,
-                    color: document.getElementById('vehicleColor').value.trim() || null
-                };
-                
-                console.log('Creating vehicle:', vehicleData);
-                const vehicleResult = await api.post('/vehicles', vehicleData);
-                console.log('Vehicle result:', vehicleResult);
-                
-                if (!vehicleResult || !vehicleResult.success) {
-                    throw new Error(vehicleResult?.error || 'Không thể tạo xe');
-                }
-                
-                const vehicleId = vehicleResult.data.vehicle_id;
-                
-                // Create RFID card
-                const cardData = {
-                    card_uid: cardUid,
-                    customer_id: customerId,
-                    vehicle_id: vehicleId,
-                    status: 'active'
-                };
-                
-                console.log('Creating RFID card:', cardData);
-                const cardResult = await api.post('/rfid/register-card', cardData);
-                console.log('Card result:', cardResult);
-                
-                if (!cardResult || !cardResult.success) {
-                    throw new Error(cardResult?.error || 'Không thể đăng ký thẻ');
-                }
-                
-                // Create package if not per_use
                 const packageType = document.querySelector('input[name="package"]:checked').value;
-                if (packageType !== 'per_use') {
-                    const packageData = {
-                        customer_id: customerId,
-                        vehicle_id: vehicleId,
-                        package_type: packageType
-                    };
-                    console.log('Creating package:', packageData);
-                    const pkgResult = await api.post('/packages', packageData);
-                    console.log('Package result:', pkgResult);
+                const registrationData = {
+                    customer: {
+                        name: document.getElementById('customerName').value.trim(),
+                        phone: document.getElementById('customerPhone').value.trim(),
+                        email: document.getElementById('customerEmail').value.trim() || null,
+                        id_card: document.getElementById('customerIdCard').value.trim() || null,
+                        address: document.getElementById('customerAddress').value.trim() || null,
+                        customer_type: 'walk_in',
+                        notes: null
+                    },
+                    vehicle: {
+                        plate_number: document.getElementById('vehiclePlate').value.trim(),
+                        vehicle_type: document.getElementById('vehicleType').value,
+                        brand: document.getElementById('vehicleBrand').value.trim() || null,
+                        model: document.getElementById('vehicleModel').value.trim() || null,
+                        color: document.getElementById('vehicleColor').value.trim() || null
+                    },
+                    card_uid: cardUid,
+                    // per_use in this form means normal hourly billing, not prepaid uses.
+                    package: packageType === 'per_use' ? null : { package_type: packageType }
+                };
+                
+                console.log('Creating full registration:', registrationData);
+                const registrationResult = await api.post('/registrations/full', registrationData);
+                console.log('Full registration result:', registrationResult);
+                
+                if (!registrationResult || !registrationResult.success) {
+                    throw new Error(getApiError(registrationResult, 'Không thể đăng ký'));
                 }
                 
                 // Clear the pending scan and stop registration mode

@@ -12,13 +12,14 @@ import re
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from app.database import get_database
+from app.controllers.registration_controller import RegisterCardRequest, card_uid_variants
 from app.models.parking_slot import SlotStatus
 from app.models.session import SessionStatus
 from app.services.fee_calculator import FeeCalculator
@@ -190,36 +191,32 @@ async def clear_latest_scan(db: AsyncIOMotorDatabase = Depends(get_database)):
 
 @router.post("/register-card")
 async def register_card(
-    card_data: dict,
+    card_data: RegisterCardRequest,
     db: AsyncIOMotorDatabase = Depends(get_database),
 ):
     """Register a new RFID card from the existing web form."""
 
-    card_uid = str(card_data.get("card_uid") or "").strip()
-    customer_id = str(card_data.get("customer_id") or "").strip()
-    vehicle_id = str(card_data.get("vehicle_id") or "").strip()
-    status = str(card_data.get("status") or "active").strip()
+    card_uid = card_data.card_uid
+    customer_id = card_data.customer_id.strip()
+    vehicle_id = card_data.vehicle_id.strip()
+    status = card_data.status.value
 
-    if not card_uid or not customer_id or not vehicle_id:
-        return {
-            "success": False,
-            "error": "card_uid, customer_id and vehicle_id are required",
-        }
+    if not customer_id or not vehicle_id:
+        raise HTTPException(
+            status_code=422,
+            detail="customer_id and vehicle_id cannot be blank",
+        )
 
-    existing = await db.rfid_cards.find_one({"card_uid": card_uid})
+    existing = await db.rfid_cards.find_one(
+        {"card_uid": {"$in": card_uid_variants(card_uid)}}
+    )
     if existing:
-        return {
-            "success": False,
-            "error": "This RFID card is already registered",
-        }
+        raise HTTPException(status_code=409, detail="RFID card UID already exists")
 
     customer = await db.customers.find_one({"customer_id": customer_id})
     vehicle = await db.vehicles.find_one({"vehicle_id": vehicle_id})
     if not customer or not vehicle or vehicle.get("customer_id") != customer_id:
-        return {
-            "success": False,
-            "error": "Invalid customer and vehicle binding",
-        }
+        raise HTTPException(status_code=400, detail="Invalid customer and vehicle binding")
 
     now = datetime.now()
     card_doc = {
@@ -228,11 +225,14 @@ async def register_card(
         "vehicle_id": vehicle_id,
         "status": status,
         "issued_at": now,
-        "expire_at": None,
+        "expire_at": card_data.expire_at,
         "created_at": now,
-        "notes": "Registered from web",
+        "notes": card_data.notes or "Registered from compatibility endpoint",
     }
-    await db.rfid_cards.insert_one(card_doc)
+    try:
+        await db.rfid_cards.insert_one(card_doc)
+    except DuplicateKeyError as exc:
+        raise HTTPException(status_code=409, detail="RFID card UID already exists") from exc
 
     return {
         "success": True,
@@ -414,20 +414,9 @@ async def checkout_vehicle(
 ) -> Dict[str, Any]:
     """Complete an active session and release its slot."""
 
-    active_package = await db.packages.find_one(
-        {
-            "customer_id": card["customer_id"],
-            "vehicle_id": card["vehicle_id"],
-            "package_type": {"$in": ["daily", "monthly"]},
-            "status": "active",
-            "expire_date": {"$gt": now},
-        }
-    )
-    package_type = active_package.get("package_type") if active_package else None
-    parking_fee = FeeCalculator.calculate_parking_fee(
+    base_fee = FeeCalculator.calculate_base_fee(
         active_session["entry_time"],
         now,
-        package_type,
     )
 
     completed_session = await db.sessions.find_one_and_update(
@@ -440,8 +429,7 @@ async def checkout_vehicle(
                 "exit_time": now,
                 "exit_gate_id": request.gate_id,
                 "status": SessionStatus.COMPLETED.value,
-                "parking_fee": parking_fee,
-                "package_type": package_type,
+                "parking_fee": base_fee,
                 "checkout_request_id": request.capture_batch_id.strip(),
             }
         },
@@ -466,8 +454,7 @@ async def checkout_vehicle(
             {
                 "exit_time": now,
                 "exit_gate_id": request.gate_id,
-                "parking_fee": parking_fee,
-                "package_type": package_type,
+                "parking_fee": base_fee,
                 "checkout_request_id": request.capture_batch_id.strip(),
                 "status": SessionStatus.COMPLETED.value,
             }
@@ -484,6 +471,134 @@ async def checkout_vehicle(
     )
 
 
+def eligible_package_query(
+    *,
+    customer_id: str,
+    vehicle_id: str,
+    vehicle_type: Optional[str],
+    at_time: datetime,
+) -> Dict[str, Any]:
+    """Limit package application to the registered customer and vehicle."""
+
+    query: Dict[str, Any] = {
+        "customer_id": customer_id,
+        "vehicle_id": vehicle_id,
+        "status": "active",
+        "expire_date": {"$gt": at_time},
+    }
+    if vehicle_type:
+        query["$or"] = [
+            {"vehicle_type": {"$exists": False}},
+            {"vehicle_type": None},
+            {"vehicle_type": vehicle_type},
+        ]
+    return query
+
+
+async def resolve_checkout_fee_breakdown(
+    db: AsyncIOMotorDatabase,
+    *,
+    completed_session: Dict[str, Any],
+    vehicle: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Resolve an eligible vehicle package and atomically consume prepaid use."""
+
+    exit_time = completed_session["exit_time"]
+    query = eligible_package_query(
+        customer_id=completed_session["customer_id"],
+        vehicle_id=completed_session["vehicle_id"],
+        vehicle_type=vehicle.get("vehicle_type"),
+        at_time=exit_time,
+    )
+
+    unlimited_package = await db.packages.find_one(
+        {
+            **query,
+            "package_type": {"$in": ["daily", "monthly"]},
+        }
+    )
+    if unlimited_package:
+        return FeeCalculator.build_fee_breakdown(
+            completed_session["entry_time"],
+            exit_time,
+            unlimited_package,
+        )
+
+    session_id = completed_session["session_id"]
+    per_use_package = await db.packages.find_one_and_update(
+        {
+            **query,
+            "package_type": "per_use",
+            "remaining_uses": {"$gt": 0},
+            "consumed_session_ids": {"$ne": session_id},
+        },
+        {
+            "$inc": {"remaining_uses": -1},
+            "$addToSet": {"consumed_session_ids": session_id},
+        },
+        return_document=ReturnDocument.AFTER,
+    )
+    if not per_use_package:
+        per_use_package = await db.packages.find_one(
+            {
+                **query,
+                "package_type": "per_use",
+                "consumed_session_ids": session_id,
+            }
+        )
+
+    return FeeCalculator.build_fee_breakdown(
+        completed_session["entry_time"],
+        exit_time,
+        per_use_package,
+    )
+
+
+async def finalize_session_fee(
+    db: AsyncIOMotorDatabase,
+    *,
+    completed_session: Dict[str, Any],
+    vehicle: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Persist one auditable fee result, repairing an interrupted checkout."""
+
+    if completed_session.get("fee_breakdown"):
+        return completed_session
+
+    fee_breakdown = await resolve_checkout_fee_breakdown(
+        db,
+        completed_session=completed_session,
+        vehicle=vehicle,
+    )
+    await db.sessions.update_one(
+        {
+            "session_id": completed_session["session_id"],
+            "$or": [
+                {"fee_breakdown": {"$exists": False}},
+                {"fee_breakdown": None},
+            ],
+        },
+        {
+            "$set": {
+                "parking_fee": fee_breakdown["final_fee"],
+                "package_id": fee_breakdown.get("package_id"),
+                "package_type": fee_breakdown.get("package_type"),
+                "fee_breakdown": fee_breakdown,
+            }
+        },
+    )
+    finalized_session = await db.sessions.find_one(
+        {"session_id": completed_session["session_id"]}
+    )
+    return finalized_session or {
+        **completed_session,
+        "parking_fee": fee_breakdown["final_fee"],
+        "package_id": fee_breakdown.get("package_id"),
+        "package_type": fee_breakdown.get("package_type"),
+        "fee_breakdown": fee_breakdown,
+    }
+
+
 async def ensure_parking_fee_transaction(
     db: AsyncIOMotorDatabase,
     *,
@@ -493,8 +608,14 @@ async def ensure_parking_fee_transaction(
     """Create at most one parking fee transaction for a completed session."""
 
     parking_fee = float(completed_session.get("parking_fee") or 0)
-    if parking_fee <= 0:
-        return None
+    fee_breakdown = completed_session.get("fee_breakdown") or {
+        "base_fee": parking_fee,
+        "discount": 0.0,
+        "package_applied": False,
+        "package_id": None,
+        "final_fee": parking_fee,
+        "reason": "Legacy session without persisted fee breakdown.",
+    }
 
     session_id = completed_session["session_id"]
     existing = await db.transactions.find_one(
@@ -514,6 +635,8 @@ async def ensure_parking_fee_transaction(
         "amount": parking_fee,
         "session_id": session_id,
         "parking_fee_session_id": session_id,
+        "package_id": fee_breakdown.get("package_id"),
+        "fee_breakdown": fee_breakdown,
         "payment_method": "cash",
         "description": f"Parking fee - {session_id}",
         "created_at": now,
@@ -542,6 +665,11 @@ async def build_checkout_response(
 ) -> Dict[str, Any]:
     """Return checkout response and repair a missing fee transaction on retry."""
 
+    completed_session = await finalize_session_fee(
+        db,
+        completed_session=completed_session,
+        vehicle=vehicle,
+    )
     slot_id = completed_session.get("slot_id")
     if slot_id:
         await db.parking_slots.update_one(
@@ -580,6 +708,7 @@ async def build_checkout_response(
         parking_fee=float(completed_session.get("parking_fee") or 0),
         duration_minutes=duration_minutes,
         package_type=completed_session.get("package_type"),
+        fee_breakdown=completed_session.get("fee_breakdown"),
         idempotent=idempotent,
     )
 

@@ -10,6 +10,7 @@ from app.database import get_database
 from app.utils.id_generator import generate_id
 from app.utils.serializers import serialize_mongodb_document, serialize_list
 from app.models.vehicle import VehicleCreate, VehicleUpdate
+from app.controllers.registration_controller import normalize_plate, plate_uniqueness_query
 
 router = APIRouter()
 
@@ -57,7 +58,8 @@ async def get_vehicles(
 async def create_vehicle(vehicle: VehicleCreate, db: AsyncIOMotorDatabase = Depends(get_database)):
     """Create new vehicle"""
     # Check if plate number exists
-    existing = await db.vehicles.find_one({"plate_number": vehicle.plate_number})
+    normalized_plate = normalize_plate(vehicle.plate_number)
+    existing = await db.vehicles.find_one(plate_uniqueness_query(normalized_plate))
     if existing:
         raise HTTPException(status_code=400, detail="Plate number already exists")
     
@@ -66,7 +68,8 @@ async def create_vehicle(vehicle: VehicleCreate, db: AsyncIOMotorDatabase = Depe
     new_vehicle = {
         "vehicle_id": vehicle_id,
         "customer_id": vehicle.customer_id,
-        "plate_number": vehicle.plate_number,
+        "plate_number": normalized_plate,
+        "normalized_plate": normalized_plate,
         "vehicle_type": vehicle.vehicle_type.value,
         "brand": vehicle.brand,
         "model": vehicle.model,
