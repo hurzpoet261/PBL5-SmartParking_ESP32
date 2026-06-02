@@ -29,6 +29,8 @@ class Session(BaseModel):
     ocr_plate: Optional[str] = None
     ocr_confidence: Optional[float] = None
     capture_batch_id: Optional[str] = None
+    checkin_request_id: Optional[str] = None
+    checkout_request_id: Optional[str] = None
     status: SessionStatus = SessionStatus.IN_PROGRESS
     parking_fee: float = 0.0
     package_id: Optional[str] = None

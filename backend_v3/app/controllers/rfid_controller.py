@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 
 from app.database import get_database
 from app.models.parking_slot import SlotStatus
@@ -54,7 +55,11 @@ class RFIDScanWithOCRRequest(RFIDScanRequest):
     device_id: str = Field(..., min_length=1, description="ESP32 gate device ID")
     ocr_plate: str = Field(..., min_length=1, description="License plate extracted by OCR")
     ocr_confidence: Optional[float] = Field(None, ge=0, le=1)
-    capture_batch_id: Optional[str] = None
+    capture_batch_id: str = Field(
+        ...,
+        min_length=1,
+        description="Unique OCR capture batch used as the idempotency key",
+    )
 
 
 def normalize_plate(value: str) -> str:
@@ -288,6 +293,10 @@ async def rfid_scan_with_ocr(
     if not ocr_plate:
         return deny("OCR plate is empty.", "OCR_PLATE_EMPTY")
 
+    request_id = request.capture_batch_id.strip()
+    if not request_id:
+        return deny("Capture batch ID is empty.", "CAPTURE_BATCH_ID_EMPTY")
+
     card = await db.rfid_cards.find_one({"card_uid": card_uid})
     if not card:
         return deny(
@@ -332,10 +341,43 @@ async def rfid_scan_with_ocr(
             ocr_plate=ocr_plate,
         )
 
-    active_session = await db.sessions.find_one(
+    processed_session = await db.sessions.find_one(
         {
             "card_uid": card_uid,
+            "vehicle_id": card["vehicle_id"],
+            "$or": [
+                {"checkin_request_id": request_id},
+                {"checkout_request_id": request_id},
+                {"capture_batch_id": request_id},
+            ],
+        }
+    )
+    if processed_session:
+        if processed_session.get("checkout_request_id") == request_id:
+            return await build_checkout_response(
+                db,
+                request=request,
+                customer=customer,
+                vehicle=vehicle,
+                completed_session=processed_session,
+                now=now,
+                idempotent=True,
+            )
+        return build_checkin_response(
+            request=request,
+            customer=customer,
+            vehicle=vehicle,
+            session=processed_session,
+            idempotent=True,
+        )
+
+    active_session = await db.sessions.find_one(
+        {
             "status": SessionStatus.IN_PROGRESS.value,
+            "$or": [
+                {"card_uid": card_uid},
+                {"vehicle_id": card["vehicle_id"]},
+            ],
         }
     )
 
@@ -399,15 +441,106 @@ async def checkout_vehicle(
                 "exit_gate_id": request.gate_id,
                 "status": SessionStatus.COMPLETED.value,
                 "parking_fee": parking_fee,
+                "package_type": package_type,
+                "checkout_request_id": request.capture_batch_id.strip(),
             }
         },
         return_document=ReturnDocument.BEFORE,
     )
+    closed_now = completed_session is not None
+    if not completed_session:
+        completed_session = await db.sessions.find_one(
+            {
+                "session_id": active_session["session_id"],
+                "status": SessionStatus.COMPLETED.value,
+            }
+        )
     if not completed_session:
         return deny(
-            "Parking session was already completed by another scan.",
-            "SESSION_ALREADY_COMPLETED",
+            "Parking session is no longer active.",
+            "SESSION_NOT_ACTIVE",
         )
+
+    if closed_now:
+        completed_session.update(
+            {
+                "exit_time": now,
+                "exit_gate_id": request.gate_id,
+                "parking_fee": parking_fee,
+                "package_type": package_type,
+                "checkout_request_id": request.capture_batch_id.strip(),
+                "status": SessionStatus.COMPLETED.value,
+            }
+        )
+
+    return await build_checkout_response(
+        db,
+        request=request,
+        customer=customer,
+        vehicle=vehicle,
+        completed_session=completed_session,
+        now=now,
+        idempotent=not closed_now,
+    )
+
+
+async def ensure_parking_fee_transaction(
+    db: AsyncIOMotorDatabase,
+    *,
+    completed_session: Dict[str, Any],
+    now: datetime,
+) -> Optional[Dict[str, Any]]:
+    """Create at most one parking fee transaction for a completed session."""
+
+    parking_fee = float(completed_session.get("parking_fee") or 0)
+    if parking_fee <= 0:
+        return None
+
+    session_id = completed_session["session_id"]
+    existing = await db.transactions.find_one(
+        {
+            "transaction_type": "parking_fee",
+            "session_id": session_id,
+        }
+    )
+    if existing:
+        return existing
+
+    transaction_id = await generate_id(db, "transactions", "T")
+    transaction = {
+        "transaction_id": transaction_id,
+        "customer_id": completed_session["customer_id"],
+        "transaction_type": "parking_fee",
+        "amount": parking_fee,
+        "session_id": session_id,
+        "parking_fee_session_id": session_id,
+        "payment_method": "cash",
+        "description": f"Parking fee - {session_id}",
+        "created_at": now,
+    }
+    try:
+        await db.transactions.update_one(
+            {"parking_fee_session_id": session_id},
+            {"$setOnInsert": transaction},
+            upsert=True,
+        )
+    except DuplicateKeyError:
+        pass
+
+    return await db.transactions.find_one({"parking_fee_session_id": session_id})
+
+
+async def build_checkout_response(
+    db: AsyncIOMotorDatabase,
+    *,
+    request: RFIDScanWithOCRRequest,
+    customer: Dict[str, Any],
+    vehicle: Dict[str, Any],
+    completed_session: Dict[str, Any],
+    now: datetime,
+    idempotent: bool,
+) -> Dict[str, Any]:
+    """Return checkout response and repair a missing fee transaction on retry."""
 
     slot_id = completed_session.get("slot_id")
     if slot_id:
@@ -426,36 +559,28 @@ async def checkout_vehicle(
             },
         )
 
-    if parking_fee > 0:
-        transaction_id = await generate_id(db, "transactions", "T")
-        await db.transactions.insert_one(
-            {
-                "transaction_id": transaction_id,
-                "customer_id": card["customer_id"],
-                "transaction_type": "parking_fee",
-                "amount": parking_fee,
-                "session_id": completed_session["session_id"],
-                "payment_method": "cash",
-                "description": f"Parking fee - {completed_session['session_id']}",
-                "created_at": now,
-            }
-        )
-
+    await ensure_parking_fee_transaction(
+        db,
+        completed_session=completed_session,
+        now=now,
+    )
+    exit_time = completed_session.get("exit_time") or now
     duration_minutes = round(
-        (now - completed_session["entry_time"]).total_seconds() / 60
+        (exit_time - completed_session["entry_time"]).total_seconds() / 60
     )
     return allow(
         "checkout",
-        "Vehicle checked out successfully.",
+        "Vehicle checkout already completed." if idempotent else "Vehicle checked out successfully.",
         gate_id=request.gate_id,
         device_id=request.device_id.strip(),
         customer_name=customer["name"],
         vehicle_plate=vehicle["plate_number"],
         session_id=completed_session["session_id"],
         slot_id=slot_id,
-        parking_fee=parking_fee,
+        parking_fee=float(completed_session.get("parking_fee") or 0),
         duration_minutes=duration_minutes,
-        package_type=package_type,
+        package_type=completed_session.get("package_type"),
+        idempotent=idempotent,
     )
 
 
@@ -469,6 +594,22 @@ async def checkin_vehicle(
     now: datetime,
 ) -> Dict[str, Any]:
     """Atomically claim an available slot and create a parking session."""
+
+    existing_session = await db.sessions.find_one(
+        {
+            "status": SessionStatus.IN_PROGRESS.value,
+            "$or": [
+                {"card_uid": request.card_uid.strip()},
+                {"vehicle_id": card["vehicle_id"]},
+            ],
+        }
+    )
+    if existing_session:
+        return deny(
+            "Card or vehicle already has an active parking session.",
+            "ACTIVE_SESSION_ALREADY_EXISTS",
+            session_id=existing_session["session_id"],
+        )
 
     session_id = await generate_id(db, "sessions", "S")
     available_slot = await db.parking_slots.find_one_and_update(
@@ -500,6 +641,7 @@ async def checkin_vehicle(
         "ocr_plate": normalize_plate(request.ocr_plate),
         "ocr_confidence": request.ocr_confidence,
         "capture_batch_id": request.capture_batch_id,
+        "checkin_request_id": request.capture_batch_id.strip(),
         "status": SessionStatus.IN_PROGRESS.value,
         "parking_fee": 0.0,
         "created_at": now,
@@ -507,6 +649,46 @@ async def checkin_vehicle(
 
     try:
         await db.sessions.insert_one(session)
+    except DuplicateKeyError:
+        await db.parking_slots.update_one(
+            {
+                "slot_id": available_slot["slot_id"],
+                "session_id": session_id,
+            },
+            {
+                "$set": {
+                    "status": SlotStatus.AVAILABLE.value,
+                    "vehicle_id": None,
+                    "session_id": None,
+                    "updated_at": datetime.now(),
+                }
+            },
+        )
+        existing_session = await db.sessions.find_one(
+            {
+                "status": SessionStatus.IN_PROGRESS.value,
+                "$or": [
+                    {"card_uid": request.card_uid.strip()},
+                    {"vehicle_id": card["vehicle_id"]},
+                ],
+            }
+        )
+        if (
+            existing_session
+            and existing_session.get("checkin_request_id") == request.capture_batch_id.strip()
+        ):
+            return build_checkin_response(
+                request=request,
+                customer=customer,
+                vehicle=vehicle,
+                session=existing_session,
+                idempotent=True,
+            )
+        return deny(
+            "Card or vehicle already has an active parking session.",
+            "ACTIVE_SESSION_ALREADY_EXISTS",
+            session_id=existing_session.get("session_id") if existing_session else None,
+        )
     except Exception:
         await db.parking_slots.update_one(
             {
@@ -524,13 +706,33 @@ async def checkin_vehicle(
         )
         raise
 
+    return build_checkin_response(
+        request=request,
+        customer=customer,
+        vehicle=vehicle,
+        session=session,
+        idempotent=False,
+    )
+
+
+def build_checkin_response(
+    *,
+    request: RFIDScanWithOCRRequest,
+    customer: Dict[str, Any],
+    vehicle: Dict[str, Any],
+    session: Dict[str, Any],
+    idempotent: bool,
+) -> Dict[str, Any]:
+    """Return the original check-in decision for a repeated request."""
+
     return allow(
         "checkin",
-        "Vehicle checked in successfully.",
+        "Vehicle check-in already completed." if idempotent else "Vehicle checked in successfully.",
         gate_id=request.gate_id,
         device_id=request.device_id.strip(),
         customer_name=customer["name"],
         vehicle_plate=vehicle["plate_number"],
-        session_id=session_id,
-        slot_id=available_slot["slot_id"],
+        session_id=session["session_id"],
+        slot_id=session["slot_id"],
+        idempotent=idempotent,
     )

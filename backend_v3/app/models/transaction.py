@@ -22,6 +22,7 @@ class Transaction(BaseModel):
     transaction_type: TransactionType
     amount: float = Field(..., description="Amount (VND)")
     session_id: Optional[str] = None
+    parking_fee_session_id: Optional[str] = None
     package_id: Optional[str] = None
     payment_method: str = Field("cash", description="cash, card, wallet")
     description: Optional[str] = None

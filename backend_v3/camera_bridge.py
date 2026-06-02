@@ -796,7 +796,7 @@ def store_captured_images_in_database(
     return stored
 
 
-def capture_burst_images(card_uid: str) -> List[str]:
+def capture_burst_images(card_uid: str) -> Tuple[List[str], str]:
     ensure_capture_dir()
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
@@ -856,7 +856,7 @@ def capture_burst_images(card_uid: str) -> List[str]:
         store_captured_images_in_database(card_uid, capture_batch_id, captured_frames)
 
     captured_frames.clear()
-    return saved_images
+    return saved_images, capture_batch_id
 
 
 # ==============================================================================
@@ -876,6 +876,7 @@ def request_backend_decision(
     event: RFIDEvent,
     plate_number: str,
     confidence: float,
+    capture_batch_id: str,
 ) -> Dict[str, Any]:
     """Ask the backend to perform the authoritative parking transaction."""
 
@@ -885,6 +886,7 @@ def request_backend_decision(
         "device_id": event.device_id,
         "ocr_plate": plate_number,
         "ocr_confidence": confidence,
+        "capture_batch_id": capture_batch_id,
         "timestamp": event.received_at,
     }
     logger.info(
@@ -992,7 +994,7 @@ def process_rfid_event(event: RFIDEvent) -> None:
     try:
         time.sleep(VEHICLE_CENTER_DELAY_SEC)
 
-        saved_images = capture_burst_images(card_uid)
+        saved_images, capture_batch_id = capture_burst_images(card_uid)
         if not saved_images:
             reject_access("camera capture failed")
             return
@@ -1011,7 +1013,12 @@ def process_rfid_event(event: RFIDEvent) -> None:
 
         logger.info("[OCR] Normalized plate: %s confidence=%.3f", plate_number, confidence)
 
-        decision = request_backend_decision(event, plate_number, confidence)
+        decision = request_backend_decision(
+            event,
+            plate_number,
+            confidence,
+            capture_batch_id,
+        )
         if not decision.get("allowed"):
             reject_access(decision.get("reason", "backend denied access"))
             return

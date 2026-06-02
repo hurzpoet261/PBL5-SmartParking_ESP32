@@ -46,6 +46,7 @@ class MongoDB:
             
             # Create indexes
             await cls.create_indexes()
+            await cls.ensure_indexes()
             
         except Exception as e:
             logger.error(f"❌ MongoDB connection error: {e}")
@@ -119,6 +120,55 @@ class MongoDB:
             
         except Exception as e:
             logger.error(f"Error creating indexes: {e}")
+
+    @classmethod
+    async def ensure_indexes(cls):
+        """
+        Create integrity indexes required by the gate workflow.
+
+        These indexes intentionally fail startup if existing active data is
+        inconsistent. Historical completed sessions and legacy transactions are
+        left untouched.
+        """
+        await cls.db.sessions.create_index(
+            [("card_uid", ASCENDING), ("status", ASCENDING)],
+            unique=True,
+            partialFilterExpression={"status": "in_progress"},
+            name="uniq_active_session_card",
+        )
+        await cls.db.sessions.create_index(
+            [("vehicle_id", ASCENDING), ("status", ASCENDING)],
+            unique=True,
+            partialFilterExpression={"status": "in_progress"},
+            name="uniq_active_session_vehicle",
+        )
+        await cls.db.sessions.create_index(
+            [("checkin_request_id", ASCENDING)],
+            unique=True,
+            sparse=True,
+            name="uniq_session_checkin_request",
+        )
+        await cls.db.sessions.create_index(
+            [("checkout_request_id", ASCENDING)],
+            unique=True,
+            sparse=True,
+            name="uniq_session_checkout_request",
+        )
+        await cls.db.parking_slots.create_index(
+            [("status", ASCENDING), ("slot_id", ASCENDING)],
+            name="slot_status_assignment",
+        )
+        await cls.db.transactions.create_index(
+            [("session_id", ASCENDING)],
+            name="transaction_session",
+        )
+        await cls.db.transactions.create_index(
+            [("parking_fee_session_id", ASCENDING)],
+            unique=True,
+            sparse=True,
+            name="uniq_parking_fee_session",
+        )
+        logger.info("Critical gate workflow indexes ready")
     
     @classmethod
     def get_db(cls) -> AsyncIOMotorDatabase:
