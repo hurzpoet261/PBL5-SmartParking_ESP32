@@ -26,6 +26,9 @@ class Session(BaseModel):
     entry_time: datetime = Field(default_factory=datetime.now)
     exit_time: Optional[datetime] = None
     distance_cm: Optional[float] = None
+    ocr_plate: Optional[str] = None
+    ocr_confidence: Optional[float] = None
+    capture_batch_id: Optional[str] = None
     status: SessionStatus = SessionStatus.IN_PROGRESS
     parking_fee: float = 0.0
     package_id: Optional[str] = None

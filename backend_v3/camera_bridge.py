@@ -2,13 +2,14 @@
 Camera Bridge - Smart Parking OCR and MQTT gate control.
 
 Runtime flow:
-RFID UID from MQTT -> burst capture ESP32-CAM -> OpenCV preprocess ->
-EasyOCR plate extraction -> MongoDB validation -> MQTT OPEN command.
+RFID event from MQTT -> burst capture ESP32-CAM -> OpenCV preprocess ->
+EasyOCR plate extraction -> backend business decision -> targeted MQTT command.
 """
 
 from __future__ import annotations
 
 import gc
+import json
 import logging
 import os
 import queue
@@ -113,7 +114,16 @@ MQTT_KEEPALIVE = _env_int("MQTT_KEEPALIVE", 60)
 MQTT_CLIENT_ID = os.getenv("MQTT_CLIENT_ID", "CameraBridge")
 MQTT_QOS = _env_int("MQTT_QOS", 1)
 TOPIC_RFID = os.getenv("MQTT_TOPIC_RFID", "pbl5/smartparking/rfid_scanned")
-TOPIC_GATE = os.getenv("MQTT_TOPIC_GATE", "pbl5/smartparking/gate")
+TOPIC_GATE_BASE = os.getenv("MQTT_TOPIC_GATE_BASE", "pbl5/smartparking/gate").rstrip("/")
+DEFAULT_GATE_ID = _env_int("GATE_ID", 1)
+DEFAULT_DEVICE_ID = os.getenv("GATE_DEVICE_ID", "esp32-gate-01").strip()
+
+BACKEND_SCAN_URL = os.getenv(
+    "BACKEND_SCAN_URL",
+    "http://localhost:8000/api/v1/rfid/scan-with-ocr",
+)
+BACKEND_CONNECT_TIMEOUT = _env_float("BACKEND_CONNECT_TIMEOUT", 1.0)
+BACKEND_READ_TIMEOUT = _env_float("BACKEND_READ_TIMEOUT", 5.0)
 
 ESP32_CAM_URL = os.getenv("ESP32_CAM_URL", "http://192.168.1.208/capture")
 ESP32_CAM_CONNECT_TIMEOUT = _env_float("ESP32_CAM_CONNECT_TIMEOUT", 1.0)
@@ -132,7 +142,6 @@ CAPTURE_IMAGE_MAX_BYTES = _env_int("CAPTURE_IMAGE_MAX_BYTES", 2_000_000)
 MAX_QUEUE_SIZE = _env_int("CAMERA_BRIDGE_QUEUE_SIZE", 50)
 VEHICLE_CENTER_DELAY_SEC = _env_float("VEHICLE_CENTER_DELAY_SEC", 0.5)
 CAMERA_BRIDGE_MODE = os.getenv("CAMERA_BRIDGE_MODE", "full").strip().lower()
-GATE_OPEN_ON_CAPTURE_ONLY = os.getenv("GATE_OPEN_ON_CAPTURE_ONLY", "false").lower() == "true"
 
 OCR_LANGS = [lang.strip() for lang in os.getenv("OCR_LANGS", "en").split(",") if lang.strip()]
 OCR_GPU = os.getenv("OCR_GPU", "false").lower() == "true"
@@ -176,12 +185,15 @@ def is_capture_only_mode() -> bool:
 
 
 NORMALIZED_PLATE_RE = re.compile(r"^\d{2}[A-Z]{1,2}\d{4,6}$")
+DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 @dataclass(frozen=True)
 class RFIDEvent:
     card_uid: str
     received_at: float
+    gate_id: int = DEFAULT_GATE_ID
+    device_id: str = DEFAULT_DEVICE_ID
 
 
 @dataclass(frozen=True)
@@ -858,21 +870,104 @@ def verify_vehicle_ownership(card_uid: str, plate_number: str, timeout: float = 
 
 
 # ==============================================================================
-# GATE CONTROL
+# BACKEND DECISION AND GATE CONTROL
 # ==============================================================================
-def publish_gate_open() -> bool:
+def request_backend_decision(
+    event: RFIDEvent,
+    plate_number: str,
+    confidence: float,
+) -> Dict[str, Any]:
+    """Ask the backend to perform the authoritative parking transaction."""
+
+    payload = {
+        "card_uid": event.card_uid,
+        "gate_id": event.gate_id,
+        "device_id": event.device_id,
+        "ocr_plate": plate_number,
+        "ocr_confidence": confidence,
+        "timestamp": event.received_at,
+    }
+    logger.info(
+        "[BACKEND] Requesting decision uid=%s plate=%s gate=%s device=%s",
+        event.card_uid,
+        plate_number,
+        event.gate_id,
+        event.device_id,
+    )
+
+    try:
+        response = camera_session.post(
+            BACKEND_SCAN_URL,
+            json=payload,
+            timeout=(BACKEND_CONNECT_TIMEOUT, BACKEND_READ_TIMEOUT),
+        )
+        response.raise_for_status()
+        decision = response.json()
+        if not isinstance(decision, dict):
+            return {
+                "success": False,
+                "allowed": False,
+                "reason": "Backend returned an invalid response.",
+            }
+        logger.info(
+            "[BACKEND] Decision allowed=%s action=%s reason=%s",
+            decision.get("allowed"),
+            decision.get("action"),
+            decision.get("reason"),
+        )
+        return decision
+    except requests.exceptions.Timeout:
+        logger.error("[ERROR] Backend decision timeout: %s", BACKEND_SCAN_URL)
+    except requests.exceptions.RequestException as exc:
+        logger.error("[ERROR] Backend decision request failed: %s", exc)
+    except ValueError as exc:
+        logger.error("[ERROR] Backend decision JSON decode failed: %s", exc)
+    except Exception as exc:
+        logger.error("[ERROR] Unexpected backend decision error: %s", exc)
+
+    return {
+        "success": False,
+        "allowed": False,
+        "reason": "Backend decision unavailable.",
+    }
+
+
+def publish_gate_open(gate_command: Dict[str, Any]) -> bool:
+    """Publish only a backend-issued OPEN command to its target gate device."""
+
     if mqtt_client is None:
         logger.error("[ERROR] Cannot publish gate OPEN: MQTT client is not initialized")
         return False
 
+    command = str(gate_command.get("command") or "").upper()
+    device_id = str(gate_command.get("device_id") or "").strip()
+    gate_id = gate_command.get("gate_id")
+    if (
+        command != "OPEN"
+        or not DEVICE_ID_RE.fullmatch(device_id)
+        or gate_id is None
+    ):
+        logger.error("[ERROR] Invalid backend gate command: %s", gate_command)
+        return False
+
+    topic = f"{TOPIC_GATE_BASE}/{device_id}"
+    payload = json.dumps(
+        {
+            "command": "OPEN",
+            "gate_id": gate_id,
+            "device_id": device_id,
+        },
+        separators=(",", ":"),
+    )
+
     try:
-        info = mqtt_client.publish(TOPIC_GATE, "OPEN", qos=MQTT_QOS, retain=False)
+        info = mqtt_client.publish(topic, payload, qos=MQTT_QOS, retain=False)
         if info.rc != mqtt.MQTT_ERR_SUCCESS:
-            logger.error("[ERROR] MQTT publish failed rc=%s topic=%s", info.rc, TOPIC_GATE)
+            logger.error("[ERROR] MQTT publish failed rc=%s topic=%s", info.rc, topic)
             return False
 
         info.wait_for_publish(timeout=2.0)
-        logger.info("[GATE] OPEN command sent topic=%s", TOPIC_GATE)
+        logger.info("[GATE] Backend-approved OPEN sent topic=%s payload=%s", topic, payload)
         return True
 
     except Exception as exc:
@@ -903,10 +998,10 @@ def process_rfid_event(event: RFIDEvent) -> None:
             return
 
         if is_capture_only_mode():
-            logger.info("[MODE] capture_only: captured %s images, skipping OCR/vehicle validation", len(saved_images))
-            if GATE_OPEN_ON_CAPTURE_ONLY:
-                logger.warning("[MODE] capture_only is publishing OPEN because GATE_OPEN_ON_CAPTURE_ONLY=true")
-                publish_gate_open()
+            logger.info(
+                "[MODE] capture_only: captured %s images, skipping backend authorization",
+                len(saved_images),
+            )
             return
 
         plate_number, confidence = extract_plate_number(saved_images, timeout=OCR_TIMEOUT_SEC)
@@ -916,12 +1011,25 @@ def process_rfid_event(event: RFIDEvent) -> None:
 
         logger.info("[OCR] Normalized plate: %s confidence=%.3f", plate_number, confidence)
 
-        validation = verify_vehicle_ownership(card_uid, plate_number)
-        if validation.get("is_valid"):
-            logger.info("[DB] Validation success")
-            publish_gate_open()
-        else:
-            reject_access(validation.get("error", "validation failed"))
+        decision = request_backend_decision(event, plate_number, confidence)
+        if not decision.get("allowed"):
+            reject_access(decision.get("reason", "backend denied access"))
+            return
+
+        gate_command = decision.get("gate_command")
+        if not isinstance(gate_command, dict):
+            reject_access("backend allowed access without a gate command")
+            return
+
+        if (
+            gate_command.get("gate_id") != event.gate_id
+            or str(gate_command.get("device_id") or "").strip() != event.device_id
+        ):
+            reject_access("backend gate command target does not match RFID event")
+            return
+
+        if not publish_gate_open(gate_command):
+            reject_access("failed to publish backend gate command")
 
     except Exception as exc:
         logger.error("[ERROR] Worker event failed uid=%s error=%s", card_uid, exc)
@@ -988,14 +1096,40 @@ def on_message(client: mqtt.Client, userdata: Any, msg: mqtt.MQTTMessage) -> Non
     del client, userdata
 
     try:
-        card_uid = msg.payload.decode("utf-8", errors="ignore").strip()
+        payload_text = msg.payload.decode("utf-8", errors="ignore").strip()
+        if not payload_text:
+            logger.warning("[MQTT] Empty RFID payload ignored")
+            return
+
+        try:
+            payload = json.loads(payload_text)
+        except ValueError:
+            # Compatibility for already-flashed legacy scanners.
+            payload = {"card_uid": payload_text}
+
+        if not isinstance(payload, dict):
+            logger.warning("[MQTT] Invalid RFID payload ignored: %s", payload_text)
+            return
+
+        card_uid = str(payload.get("card_uid") or "").strip()
         if not card_uid:
             logger.warning("[MQTT] Empty RFID payload ignored")
             return
 
-        event = RFIDEvent(card_uid=card_uid, received_at=time.time())
+        event = RFIDEvent(
+            card_uid=card_uid,
+            received_at=time.time(),
+            gate_id=int(payload.get("gate_id") or DEFAULT_GATE_ID),
+            device_id=str(payload.get("device_id") or DEFAULT_DEVICE_ID).strip(),
+        )
         task_queue.put_nowait(event)
-        logger.info("[MQTT] RFID queued uid=%s queue_size=%s", card_uid, task_queue.qsize())
+        logger.info(
+            "[MQTT] RFID queued uid=%s gate=%s device=%s queue_size=%s",
+            event.card_uid,
+            event.gate_id,
+            event.device_id,
+            task_queue.qsize(),
+        )
 
     except queue.Full:
         logger.error("[ERROR] Queue full. Dropping RFID event from topic=%s", msg.topic)
@@ -1020,7 +1154,8 @@ def main() -> None:
 
     logger.info("[SYSTEM] Camera Bridge starting")
     logger.info("[SYSTEM] MQTT broker=%s:%s", MQTT_BROKER, MQTT_PORT)
-    logger.info("[SYSTEM] RFID topic=%s gate topic=%s", TOPIC_RFID, TOPIC_GATE)
+    logger.info("[SYSTEM] RFID topic=%s gate topic base=%s", TOPIC_RFID, TOPIC_GATE_BASE)
+    logger.info("[SYSTEM] Backend scan endpoint=%s", BACKEND_SCAN_URL)
     logger.info("[SYSTEM] ESP32-CAM=%s", ESP32_CAM_URL)
     logger.info("[SYSTEM] MongoDB=%s db=%s", mask_mongodb_url(MONGODB_URL), MONGODB_DB_NAME)
     logger.info("[SYSTEM] Captured images dir=%s", SAVE_DIR)
@@ -1031,7 +1166,7 @@ def main() -> None:
         CAPTURE_METADATA_COLLECTION,
         CAPTURE_IMAGE_MAX_BYTES,
     )
-    logger.info("[SYSTEM] Mode=%s gate_open_on_capture_only=%s", CAMERA_BRIDGE_MODE, GATE_OPEN_ON_CAPTURE_ONLY)
+    logger.info("[SYSTEM] Mode=%s", CAMERA_BRIDGE_MODE)
 
     ensure_capture_dir()
     cleanup_old_captures()

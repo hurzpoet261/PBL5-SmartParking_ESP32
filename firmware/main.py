@@ -2,8 +2,8 @@
 ESP32 Smart Parking - MQTT Gate Firmware
 
 Runtime:
-RFID RC522 scan -> publish UID to MQTT topic
-MQTT OPEN command -> open servo barrier
+RFID RC522 scan -> publish gate event to MQTT topic
+backend-approved targeted MQTT command -> open servo barrier
 
 Upload this file as main.py when using backend_v3/camera_bridge.py.
 """
@@ -13,6 +13,7 @@ from mfrc522 import MFRC522
 import esp32_config as config
 import network
 import time
+import ujson as json
 
 try:
     from umqtt.simple import MQTTClient
@@ -181,9 +182,28 @@ def on_mqtt_message(topic, payload):
 
     log("[MQTT] RX topic={} payload={}".format(topic_text, payload_text))
 
-    if topic_text == config.MQTT_TOPIC_GATE and payload_text.upper() == "OPEN":
+    if topic_text != config.MQTT_TOPIC_GATE:
+        return
+
+    try:
+        command = json.loads(payload_text)
+    except Exception:
+        log("[MQTT] Ignored non-JSON gate command")
+        return
+
+    try:
+        is_targeted_open = (
+            command.get("command", "").upper() == "OPEN"
+            and command.get("device_id") == config.MQTT_DEVICE_ID
+            and int(command.get("gate_id", -1)) == config.GATE_ID
+        )
+    except Exception:
+        is_targeted_open = False
+    if is_targeted_open:
         gate_open()
         beep_ok()
+    else:
+        log("[MQTT] Ignored command for another gate/device")
 
 
 def connect_mqtt(force=False):
@@ -255,7 +275,12 @@ def publish_rfid(card_uid):
         return False
 
     try:
-        client.publish(config.MQTT_TOPIC_RFID, card_uid.encode())
+        payload = json.dumps({
+            "card_uid": card_uid,
+            "gate_id": config.GATE_ID,
+            "device_id": config.MQTT_DEVICE_ID,
+        })
+        client.publish(config.MQTT_TOPIC_RFID, payload.encode())
         log("[RFID] Published UID={} topic={}".format(card_uid, config.MQTT_TOPIC_RFID))
         display("RFID sent", card_uid[-8:])
         beep_ok()

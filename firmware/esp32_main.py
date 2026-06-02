@@ -1,5 +1,7 @@
 """
-ESP32 Smart Parking - Main Program
+ESP32 Smart Parking - Legacy REST Firmware
+Deprecated: /rfid/scan no longer opens the gate without OCR evidence.
+Upload firmware/main.py for the production RFID -> OCR -> backend flow.
 Firmware hoàn chỉnh với kết nối Wi-Fi ổn định và logic chặt chẽ
 """
 
@@ -290,7 +292,7 @@ def process_rfid_card(card_uid, wifi_connected):
                 return False
         else:
             # Offline mode
-            if config.OFFLINE_MODE_ENABLED:
+            if False:  # Deprecated firmware must not authorize a local UID list.
                 if config.OFFLINE_ALLOW_ALL_CARDS or card_uid in config.OFFLINE_AUTHORIZED_CARDS:
                     config.log(f"✅ Offline Mode - Access Granted")
                     display_message(config.MSG_OFFLINE, card_uid[-8:])

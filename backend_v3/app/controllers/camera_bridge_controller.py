@@ -69,6 +69,8 @@ def get_camera_bridge():
 class ManualTriggerRequest(BaseModel):
     """Request to trigger camera_bridge manually"""
     card_uid: str
+    gate_id: int = 1
+    device_id: str = "esp32-gate-01"
     description: Optional[str] = None
 
 
@@ -116,6 +118,8 @@ async def get_bridge_status():
                 "burst_count": cb.BURST_COUNT,
                 "esp32_cam_url": cb.ESP32_CAM_URL,
                 "mqtt_broker": cb.MQTT_BROKER,
+                "mqtt_gate_topic_base": cb.TOPIC_GATE_BASE,
+                "backend_scan_url": cb.BACKEND_SCAN_URL,
                 "save_dir": cb.SAVE_DIR,
                 "store_captured_images_in_db": cb.STORE_CAPTURED_IMAGES_IN_DB,
                 "capture_image_bucket": cb.CAPTURE_IMAGE_BUCKET,
@@ -140,7 +144,12 @@ async def trigger_manual_rfid(request: ManualTriggerRequest):
             raise HTTPException(status_code=400, detail="card_uid cannot be empty")
 
         logger.info(f"🔔 Manual trigger: UID={card_uid}")
-        event = cb.RFIDEvent(card_uid=card_uid, received_at=time.time())
+        event = cb.RFIDEvent(
+            card_uid=card_uid,
+            received_at=time.time(),
+            gate_id=request.gate_id,
+            device_id=request.device_id,
+        )
         cb.task_queue.put_nowait(event)
 
         return {

@@ -28,8 +28,9 @@ MQTT_BROKER = "broker.hivemq.com"
 MQTT_PORT = 1883
 MQTT_KEEPALIVE = 60
 MQTT_CLIENT_ID = "esp32-gate-01"
+MQTT_DEVICE_ID = "esp32-gate-01"
 MQTT_TOPIC_RFID = "pbl5/smartparking/rfid_scanned"
-MQTT_TOPIC_GATE = "pbl5/smartparking/gate"
+MQTT_TOPIC_GATE = "pbl5/smartparking/gate/esp32-gate-01"
 MQTT_RECONNECT_DELAY = 5
 
 # ═══════════════════════════════════════════════════
@@ -121,7 +122,7 @@ DEBUG_SHOW_RFID_UID = True           # Hiển thị UID thẻ RFID
 # OFFLINE MODE
 # ═══════════════════════════════════════════════════
 
-OFFLINE_MODE_ENABLED = True          # Cho phép hoạt động offline
+OFFLINE_MODE_ENABLED = False         # Legacy UID-only offline access is disabled
 OFFLINE_ALLOW_ALL_CARDS = False      # Cho phép tất cả thẻ khi offline
 OFFLINE_AUTHORIZED_CARDS = [         # Danh sách thẻ được phép (offline)
     "0xa3d6ce05",
