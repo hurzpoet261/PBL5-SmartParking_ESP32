@@ -131,13 +131,13 @@ class MongoDB:
         left untouched.
         """
         await cls.db.sessions.create_index(
-            [("card_uid", ASCENDING), ("status", ASCENDING)],
+            [("card_uid", ASCENDING)],
             unique=True,
             partialFilterExpression={"status": "in_progress"},
             name="uniq_active_session_card",
         )
         await cls.db.sessions.create_index(
-            [("vehicle_id", ASCENDING), ("status", ASCENDING)],
+            [("vehicle_id", ASCENDING)],
             unique=True,
             partialFilterExpression={"status": "in_progress"},
             name="uniq_active_session_vehicle",

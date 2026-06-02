@@ -213,11 +213,11 @@ class MongoIndexTests(unittest.IsolatedAsyncioTestCase):
         }
         self.assertEqual(
             session_indexes["uniq_active_session_card"][0],
-            [("card_uid", 1), ("status", 1)],
+            [("card_uid", 1)],
         )
         self.assertEqual(
             session_indexes["uniq_active_session_vehicle"][0],
-            [("vehicle_id", 1), ("status", 1)],
+            [("vehicle_id", 1)],
         )
         self.assertTrue(session_indexes["uniq_active_session_card"][1]["unique"])
         self.assertEqual(
