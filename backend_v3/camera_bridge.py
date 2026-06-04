@@ -87,7 +87,7 @@ TOPIC_GATE = (
     or "pbl5/smartparking/gate"
 )
 
-ESP32_CAM_URL = os.getenv("ESP32_CAM_URL", "http://192.168.1.208/capture")
+ESP32_CAM_URL = os.getenv("ESP32_CAM_URL", "http://10.129.42.178/capture")
 ESP32_CAM_CONNECT_TIMEOUT = _env_float("ESP32_CAM_CONNECT_TIMEOUT", 1.0)
 ESP32_CAM_READ_TIMEOUT = _env_float("ESP32_CAM_READ_TIMEOUT", 4.0)
 BURST_COUNT = _env_int("BURST_COUNT", 3)

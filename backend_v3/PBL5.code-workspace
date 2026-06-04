@@ -1,0 +1,23 @@
+{
+	"folders": [
+		{
+			"name": "PBL5",
+			"path": "../.."
+		},
+		{
+			"name": "Camera",
+			"path": "C:/Users/Admin/OneDrive - The University of Technology/Documents/PlatformIO/Projects/Camera"
+		},
+		{
+			"name": "260516-121635-esp32cam",
+			"path": "C:/Users/Admin/OneDrive - The University of Technology/Documents/PlatformIO/Projects/260516-121635-esp32cam"
+		},
+		{
+			"name": "260516-121635-esp32cam",
+			"path": "../../260516-121635-esp32cam"
+		}
+	],
+	"settings": {
+		"liveServer.settings.multiRootWorkspaceName": "PBL5"
+	}
+}

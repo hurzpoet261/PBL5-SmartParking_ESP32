@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "../.."
+		},
+		{
+			"name": "260516-121635-esp32cam",
+			"path": "../../260516-121635-esp32cam"
+		}
+	],
+	"settings": {
+		"liveServer.settings.multiRootWorkspaceName": "PBL5"
+	}
+}
