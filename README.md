@@ -1,106 +1,80 @@
-# 🚗 Smart Parking System
+# Smart Parking System V3
 
-Hệ thống quản lý bãi đỗ xe thông minh sử dụng ESP32, RFID, và Web Dashboard.
+He thong bai do xe thong minh dung ESP32, RFID, ESP32-CAM, FastAPI, MongoDB,
+MQTT va web dashboard.
 
-## 📋 Tính năng
+## Luong van hanh hien tai
 
-- ✅ Quét thẻ RFID tự động
-- ✅ Tự động tạo khách hàng/xe khi quét thẻ mới
-- ✅ Check-in/Check-out tự động
-- ✅ Tính phí đỗ xe
-- ✅ Web dashboard quản lý
-- ✅ Thống kê real-time
+Luong mo cong chinh da duoc khoa theo camera/OCR:
 
-## 🏗️ Cấu trúc dự án
-
-```
-PBL5-SmartParking_ESP32/
-├── backend/          # Backend API (FastAPI)
-├── firmware/         # ESP32 Firmware (MicroPython)
-├── web/              # Web Dashboard
-├── docs/             # Documentation
-└── scripts/          # Utility scripts
+```text
+ESP32 RFID -> MQTT -> camera_bridge.py -> ESP32-CAM chup anh
+           -> Backend POST /api/v1/access-events/rfid-camera
+           -> OCR + validate RFID/bien so + luu DB
+           -> Backend publish MQTT open gate
+           -> ESP32 nhan lenh va mo barrier
 ```
 
-## 🚀 Quick Start
+`POST /api/v1/rfid/scan` chi con dung cho dang ky the/test. Endpoint nay khong
+tao session, khong tinh phi, khong cap quyen mo cong.
 
-### 1. Chạy Backend
+## Firmware
 
-```bash
-# Windows
-scripts\start_backend.bat
+Dung firmware chinh:
 
-# Hoặc thủ công
-cd backend
-pip install -r requirements.txt
-python app.py
+- `firmware/main.py`
+- `firmware/esp32_config.py`
+- `firmware/mfrc522.py`
+- `firmware/lcd_i2c.py`
+
+Upload `firmware/main.py` len ESP32 voi ten `main.py`.
+
+`firmware/legacy_esp32_main.py` la firmware HTTP cu, chi giu lai de tham khao.
+Khong upload file nay cho luong camera/OCR hien tai.
+
+## Backend
+
+```powershell
+cd E:\PBL5-SmartParking_ESP32\backend_v3
+conda activate pbl5-ai
+python -m app.main
 ```
 
-### 2. Upload Firmware lên ESP32
+Backend mac dinh chay tai `http://localhost:8000`.
 
-**Cấu hình** (sửa `firmware/esp32_config.py`):
-```python
-WIFI_SSID = "Ten_WiFi"
-WIFI_PASS = "Mat_Khau"
-API_BASE_URL = "http://192.168.1.XXX:8000/api/v1"  # IP máy tính
+## Camera Bridge
+
+```powershell
+cd E:\PBL5-SmartParking_ESP32
+conda activate pbl5-ai
+python backend_v3\camera_bridge.py
 ```
 
-**Upload** (sử dụng Thonny IDE):
-- `mfrc522.py`
-- `lcd_i2c.py`
-- `esp32_config.py`
-- `esp32_main.py` → đổi tên thành `main.py`
+Camera bridge nhan UID tu MQTT, chup anh tu ESP32-CAM, goi OCR/Backend va ghi
+metrics thoi gian xu ly.
 
-### 3. Mở Web Dashboard
+## Frontend
 
-```bash
-# Mở file
-web\index.html
-
-# Hoặc chạy toàn bộ
-scripts\start_system.bat
+```powershell
+cd E:\PBL5-SmartParking_ESP32\frontend_v3
+python -m http.server 5500
 ```
 
-## 📚 Documentation
+Mo `http://localhost:5500`.
 
-Xem hướng dẫn đầy đủ: [`docs/GUIDE.md`](docs/GUIDE.md)
+## Package va phi
 
-## 🔧 Tech Stack
+- `per_use`: khong tao package trong DB, phi tinh theo tung session khi xe ra.
+- `daily`, `monthly`: tao package theo dung xe cua dung khach.
+- Khi xe ra, mien phi chi ap dung neu xe do co package `daily/monthly` active va
+  con han.
 
-- **Backend**: FastAPI + Python
-- **Frontend**: HTML/CSS/JavaScript
-- **Firmware**: MicroPython
-- **Hardware**: ESP32 + MFRC522 + LCD I2C + Servo
+## Endpoint chinh
 
-## 📊 API Endpoints
+- `POST /api/v1/access-events/rfid-camera`: luong vao/ra that te.
+- `POST /api/v1/rfid/registration-mode/start`: bat che do dang ky the.
+- `GET /api/v1/rfid/latest-scan`: lay UID moi quet de dien form dang ky.
+- `POST /api/v1/rfid/register-card`: dang ky the sau khi validate customer-vehicle-card.
+- `POST /api/v1/rfid/scan`: registration/test only, khong mo cong.
 
-- `POST /api/v1/rfid/scan` - Quét thẻ RFID
-- `GET /api/v1/customers` - Danh sách khách hàng
-- `GET /api/v1/vehicles` - Danh sách xe
-- `GET /api/v1/sessions` - Lịch sử ra vào
-- `GET /api/v1/stats` - Thống kê
-
-API Docs: http://localhost:8000/docs
-
-## 🧪 Testing
-
-```bash
-# Test backend
-curl http://localhost:8000/health
-
-# Test tạo dữ liệu
-curl -X POST "http://localhost:8000/api/v1/test/scan?card_uid=TEST001"
-```
-
-## 📝 License
-
-MIT License
-
-## 👥 Contributors
-
-Smart Parking Development Team
-
----
-
-**Version**: 2.0.0  
-**Last Updated**: April 2026
+API docs: `http://localhost:8000/docs`.

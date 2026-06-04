@@ -13,10 +13,11 @@ WIFI_TIMEOUT = 20                    # Timeout kết nối (giây)
 WIFI_RETRY_DELAY = 5                 # Delay giữa các lần thử lại (giây)
 
 # ═══════════════════════════════════════════════════
-# BACKEND API CONFIGURATION
+# BACKEND API CONFIGURATION (LEGACY HTTP FIRMWARE ONLY)
 # ═══════════════════════════════════════════════════
 
 API_BASE_URL = "http://192.168.1.48:8000/api/v1"  # ⚠️ THAY ĐỔI: IP máy tính chạy backend
+# API_BASE_URL is only used by legacy_esp32_main.py. Current main.py uses MQTT.
 API_TIMEOUT = 10                     # Timeout cho API request (giây)
 API_RETRY = 3                        # Số lần thử lại khi lỗi
 

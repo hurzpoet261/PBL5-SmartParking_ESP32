@@ -288,6 +288,7 @@
             
             const submitBtn = e.target.querySelector('button[type="submit"]');
             submitBtn.disabled = true;
+            let createdCustomerId = null;
             submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Đang xử lý...';
             
             try {
@@ -300,6 +301,8 @@
                 if (isAutoFetching) {
                     await stopAutoFetch();
                 }
+
+                const packageType = document.querySelector('input[name="package"]:checked').value;
                 
                 // Create customer
                 const customerData = {
@@ -308,7 +311,7 @@
                     email: document.getElementById('customerEmail').value.trim() || null,
                     id_card: document.getElementById('customerIdCard').value.trim() || null,
                     address: document.getElementById('customerAddress').value.trim() || null,
-                    customer_type: 'walk_in',
+                    customer_type: packageType === 'per_use' ? 'walk_in' : packageType,
                     notes: null
                 };
                 
@@ -321,6 +324,7 @@
                 }
                 
                 const customerId = customerResult.data.customer_id;
+                createdCustomerId = customerId;
                 
                 // Create vehicle
                 const vehicleData = {
@@ -359,7 +363,6 @@
                 }
                 
                 // Create package if not per_use
-                const packageType = document.querySelector('input[name="package"]:checked').value;
                 if (packageType !== 'per_use') {
                     const packageData = {
                         customer_id: customerId,
@@ -369,6 +372,10 @@
                     console.log('Creating package:', packageData);
                     const pkgResult = await api.post('/packages', packageData);
                     console.log('Package result:', pkgResult);
+
+                    if (!pkgResult || !pkgResult.success) {
+                        throw new Error(pkgResult?.error || 'Khong the tao goi cuoc');
+                    }
                 }
                 
                 // Clear the pending scan and stop registration mode
@@ -382,6 +389,13 @@
                 
             } catch (error) {
                 console.error('Registration error:', error);
+                if (createdCustomerId) {
+                    try {
+                        await api.delete(`/customers/${encodeURIComponent(createdCustomerId)}`);
+                    } catch (cleanupError) {
+                        console.error('Registration cleanup failed:', cleanupError);
+                    }
+                }
                 showToast('❌ Đăng ký thất bại: ' + (error.message || error), 'danger');
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = '<i class="bi bi-check-circle"></i> Đăng ký';

@@ -928,7 +928,9 @@ async def process_exit(
     active_package = await db.packages.find_one(
         {
             "customer_id": card["customer_id"],
+            "vehicle_id": card["vehicle_id"],
             "status": "active",
+            "package_type": {"$in": ["daily", "monthly"]},
             "expire_date": {"$gt": dt},
         }
     )
@@ -1109,7 +1111,7 @@ async def handle_rfid_camera_event(
 ):
     request_started_at = time.perf_counter()
     processing_metrics_doc = init_processing_metrics(parse_processing_metrics(processing_metrics))
-    card_uid = card_uid.strip()
+    card_uid = card_uid.strip().lower()
     if not card_uid:
         raise HTTPException(status_code=400, detail="card_uid is required")
 
@@ -1617,7 +1619,7 @@ async def dev_reset_active_session(
     if not ENABLE_DEV_ACCESS_TOOLS:
         raise HTTPException(status_code=404, detail="Not found")
 
-    card_uid = card_uid.strip()
+    card_uid = card_uid.strip().lower()
     session = await db.sessions.find_one(
         {"card_uid": card_uid, "status": SessionStatus.IN_PROGRESS.value}
     )

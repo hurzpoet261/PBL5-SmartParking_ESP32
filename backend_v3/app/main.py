@@ -99,7 +99,7 @@ async def root():
         "endpoints": {
             "health": "/health",
             "docs": "/docs",
-            "rfid_scan": "POST /api/v1/rfid/scan",
+            "rfid_scan_registration_test_only": "POST /api/v1/rfid/scan",
             "customers": "/api/v1/customers",
             "vehicles": "/api/v1/vehicles",
             "sessions": "/api/v1/sessions",

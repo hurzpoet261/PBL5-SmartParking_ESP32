@@ -1,146 +1,137 @@
-# 📖 HƯỚNG DẪN SỬ DỤNG - SMART PARKING V3.0
+# HUONG DAN SU DUNG - SMART PARKING V3
 
-## 🚀 KHỞI ĐỘNG HỆ THỐNG
+## 1. Khoi dong he thong
 
-### 1. Kiểm tra MongoDB
+Mo 4 terminal rieng:
 
-```bash
-cd backend_v3
-python check_mongodb.py
+### MongoDB
+
+```powershell
+Start-Service MongoDB
 ```
 
-### 2. Chạy Backend
+### MQTT broker
 
-```bash
-cd backend_v3
+Chay Mosquitto local port `1883`.
+
+### Backend
+
+```powershell
+cd E:\PBL5-SmartParking_ESP32\backend_v3
+conda activate pbl5-ai
 python -m app.main
 ```
 
-Backend chạy tại: http://localhost:8000
+### Camera bridge
 
-### 3. Mở Frontend
-
-Mở file `frontend_v3/index.html` bằng trình duyệt hoặc Live Server
-
----
-
-## 📝 ĐĂNG KÝ THẺ MỚI
-
-### Cách 1: Tự động quét thẻ (Khuyên dùng)
-
-1. Vào trang: http://localhost:5500/pages/register-card.html
-2. Nhấn nút "Quét thẻ" (nút sẽ chuyển sang màu đỏ "Dừng quét")
-3. Quét thẻ RFID trên ESP32
-4. Mã thẻ sẽ TỰ ĐỘNG điền vào ô "UID Thẻ"
-5. Điền thông tin khách hàng và xe
-6. Chọn gói cước
-7. Nhấn "Đăng ký"
-
-### Cách 2: Nhập thủ công
-
-1. Xem mã thẻ trên Serial Monitor ESP32
-2. Copy mã thẻ (VD: 0xa3d6ce05)
-3. Paste vào ô "UID Thẻ"
-4. Điền thông tin và đăng ký
-
----
-
-## 🎯 LUỒNG HOẠT ĐỘNG
-
-### Đăng ký thẻ mới:
-```
-1. Nhấn "Quét thẻ" trên web
-2. Quét thẻ RFID trên ESP32
-3. Mã thẻ tự động hiện trên web (mỗi 2 giây check 1 lần)
-4. Điền thông tin → Đăng ký
-5. Thẻ sẵn sàng sử dụng
+```powershell
+cd E:\PBL5-SmartParking_ESP32
+conda activate pbl5-ai
+python backend_v3\camera_bridge.py
 ```
 
-### Quét thẻ đã đăng ký:
-```
-1. Quét thẻ tại cổng
-2. Nếu chưa có session → CHECK-IN (vào bãi)
-3. Nếu đã có session → CHECK-OUT (ra bãi, tính phí)
-4. Cổng tự động mở
-```
+### Frontend
 
----
-
-## 🔧 KHẮC PHỤC SỰ CỐ
-
-### Lỗi: Không đăng ký được
-
-**Nguyên nhân:** CORS hoặc backend chưa chạy
-
-**Giải pháp:**
-1. Kiểm tra backend đã chạy: http://localhost:8000/health
-2. Mở DevTools (F12) → Console để xem lỗi chi tiết
-3. Restart backend
-
-### Lỗi: Mã thẻ không tự động điền
-
-**Nguyên nhân:** Chưa quét thẻ hoặc backend chưa nhận
-
-**Giải pháp:**
-1. Kiểm tra ESP32 đã kết nối WiFi
-2. Quét lại thẻ RFID
-3. Hoặc nhập thủ công
-
-### Lỗi: MongoDB connection failed
-
-**Giải pháp:**
-```bash
-# Chuyển sang MongoDB Local
-copy .env.local .env
-python -m app.main
+```powershell
+cd E:\PBL5-SmartParking_ESP32\frontend_v3
+python -m http.server 5500
 ```
 
----
+Mo `http://localhost:5500`.
 
-## 📊 CẤU TRÚC DỰ ÁN
+## 2. Dang ky the moi
 
+1. Vao `http://localhost:5500/pages/register-card.html`.
+2. Bam `Quet the`.
+3. Quet the RFID tren ESP32.
+4. UID duoc dua vao form tu `/api/v1/rfid/latest-scan`.
+5. Nhap thong tin khach hang va xe.
+6. Chon goi:
+   - `Theo luot`: khong tao package, khi xe ra se tinh phi theo thoi gian.
+   - `Theo ngay`: tao package 1 ngay cho xe do.
+   - `Theo thang`: tao package 30 ngay cho xe do.
+7. Bam `Dang ky`.
+
+Validation khi dang ky:
+
+- The RFID chua duoc dang ky.
+- Customer phai ton tai va active.
+- Vehicle phai active va thuoc dung customer.
+- Mot vehicle chi co mot active RFID card.
+- Bien so duoc chuan hoa truoc khi luu de tranh trung lap do dau gach/khoang trang.
+
+## 3. Luong khach da dang ky quet the
+
+```text
+RFID da dang ky
+-> ESP32 publish MQTT UID
+-> camera_bridge chup anh
+-> OCR bien so
+-> Backend tim card + vehicle
+-> So sanh OCR voi bien so du kien
+-> Luu event/session
+-> Publish MQTT open gate neu accepted
 ```
-PBL5-SmartParking_ESP32/
-├── backend_v3/          # Backend API
-│   ├── app/
-│   │   ├── controllers/ # API endpoints
-│   │   ├── models/      # Data models
-│   │   ├── services/    # Business logic
-│   │   └── database/    # MongoDB connection
-│   ├── .env            # Configuration
-│   └── check_mongodb.py # MongoDB checker
-│
-├── frontend_v3/         # Web interface
-│   ├── index.html      # Dashboard
-│   ├── pages/          # All pages
-│   └── assets/         # CSS, JS
-│
-├── firmware/            # ESP32 code
-│   ├── esp32_main.py
-│   ├── esp32_config.py
-│   ├── mfrc522.py
-│   └── lcd_i2c.py
-│
-├── docs/               # Documentation
-└── scripts/            # Helper scripts
+
+Neu chua co session active: he thong tao luot vao.
+
+Neu da co session active: he thong tao luot ra, tinh phi va dong session.
+
+Mien phi khi ra chi ap dung neu chinh xe do co package `daily` hoac `monthly`
+active va con han.
+
+## 4. Luong khach vang lai
+
+```text
+RFID chua dang ky
+-> Bat buoc chup anh va OCR thanh cong
+-> Backend tao customer walk_in + vehicle + card tam
+-> Tao session vao
+-> Mo cong neu luu DB thanh cong
 ```
 
----
+Neu OCR khong doc duoc bien so, he thong tu choi de tranh luu luot vao thieu
+bien so.
 
-## ✅ CHECKLIST
+Khi xe ra, the khach vang lai se co session active nen he thong di theo luong ra
+va tinh phi theo thoi gian neu khong co package.
 
-- [ ] MongoDB đã chạy
-- [ ] Backend đã chạy (http://localhost:8000)
-- [ ] Frontend đã mở
-- [ ] ESP32 đã kết nối WiFi (nếu có)
-- [ ] Đã test đăng ký thẻ thành công
+## 5. Endpoint quan trong
 
----
+- `POST /api/v1/access-events/rfid-camera`: luong vao/ra chinh.
+- `POST /api/v1/rfid/registration-mode/start`: bat che do quet the de dang ky.
+- `GET /api/v1/rfid/latest-scan`: lay UID moi quet cho form dang ky.
+- `POST /api/v1/rfid/register-card`: dang ky the.
+- `POST /api/v1/rfid/scan`: chi registration/test, khong mo cong.
 
-## 📞 HỖ TRỢ
+Khong dung `/api/v1/rfid/scan` de demo luong vao/ra vi endpoint nay khong tao
+session va khong cap quyen mo barrier.
 
-- API Docs: http://localhost:8000/docs
-- Health Check: http://localhost:8000/health
-- MongoDB Check: `python check_mongodb.py`
+## 6. Cau truc firmware
 
-**Chúc bạn thành công! 🚀**
+```text
+firmware/
+  main.py                 # Firmware MQTT hien tai, upload thanh main.py
+  esp32_config.py         # WiFi, MQTT, topic, chan GPIO
+  mfrc522.py              # RFID RC522
+  lcd_i2c.py              # LCD
+  legacy_esp32_main.py    # Firmware HTTP cu, khong upload cho luong hien tai
+```
+
+## 7. Theo doi trang thai
+
+- Dashboard: tong slot, slot trong, xe dang do.
+- Parking map: trang thai tung slot.
+- Access events: anh, OCR, decision, review.
+- Terminal camera bridge: xem `[METRICS]` de do thoi gian capture/rank/OCR/backend.
+- Terminal backend: xem MongoDB, MQTT publisher va access decision.
+
+## 8. Xu ly loi nhanh
+
+- UID khong hien tren form dang ky: dam bao registration mode da bat, ESP32 MQTT
+  publish dung topic, camera bridge/backend dang chay.
+- Barrier khong mo: kiem tra backend co publish MQTT gate khong, ESP32 co subscribe
+  dung `MQTT_TOPIC_GATE` khong.
+- OCR fail: kiem tra anh preprocess, goc camera, anh mo, bien so bi cat.
+- Package khong tao duoc: xe co the da co package active con han hoac vehicle
+  khong thuoc customer dang chon.

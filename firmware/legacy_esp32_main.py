@@ -1,4 +1,7 @@
 """
+LEGACY HTTP firmware. Do not upload this file for the current camera/OCR gate flow.
+Use firmware/main.py with MQTT instead.
+
 ESP32 Smart Parking - Main Program
 Firmware hoàn chỉnh với kết nối Wi-Fi ổn định và logic chặt chẽ
 """

@@ -73,6 +73,7 @@ async def get_customer(customer_id: str, db: AsyncIOMotorDatabase = Depends(get_
     active_package = await db.packages.find_one({
         "customer_id": customer_id,
         "status": "active",
+        "package_type": {"$in": ["daily", "monthly"]},
         "expire_date": {"$gt": datetime.now()}
     })
     

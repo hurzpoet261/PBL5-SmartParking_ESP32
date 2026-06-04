@@ -1,372 +1,176 @@
-# 🚀 HƯỚNG DẪN CHẠY NHANH - SMART PARKING V3.0
+# HUONG DAN CHAY NHANH - SMART PARKING V3
 
-## ⚡ CHẠY NHANH (5 PHÚT)
+Huong dan nay ap dung cho luong hien tai: MongoDB local, MQTT local, ESP32 RFID
+gui MQTT, camera bridge chup anh va backend quyet dinh mo cong.
 
-### Bước 1: Cài MongoDB (Chọn 1 trong 2)
+## 1. Chuan bi dich vu local
 
-**Cách 1: MongoDB Local (Đơn giản nhất)**
-```bash
-# Tải MongoDB Community: https://www.mongodb.com/try/download/community
-# Cài đặt và chạy (mặc định port 27017)
+### MongoDB
+
+MongoDB chay tai:
+
+```text
+mongodb://127.0.0.1:27017
 ```
 
-**Cách 2: MongoDB Atlas (Cloud - Miễn phí)**
-```bash
-# Đăng ký: https://www.mongodb.com/cloud/atlas
-# Tạo cluster miễn phí
-# Copy connection string
+Neu cai MongoDB dang ky service Windows:
+
+```powershell
+Start-Service MongoDB
 ```
 
-### Bước 2: Cấu hình Backend
+Neu khong dung service, chay `mongod` theo cach ban da cai dat.
 
-**Chọn MongoDB:**
+### MQTT broker
 
-**Cách 1: MongoDB Local**
-```bash
-cd backend_v3
+Dung Mosquitto local port `1883`.
+
+Kiem tra nhanh:
+
+```powershell
+netstat -ano | findstr :1883
+```
+
+## 2. Cau hinh backend
+
+```powershell
+cd E:\PBL5-SmartParking_ESP32\backend_v3
 copy .env.local .env
-```
-
-**Cách 2: MongoDB Atlas**
-```bash
-cd backend_v3
-copy .env.atlas .env
-```
-
-**Kiểm tra kết nối:**
-```bash
+conda activate pbl5-ai
 python check_mongodb.py
-```
-
-### Bước 3: Khởi tạo dữ liệu
-
-```bash
 python init_data.py
-```
-
-Script này sẽ tạo 20 chỗ đỗ xe (A01-A20).
-
-### Bước 4: Chạy Backend
-
-```bash
-cd backend_v3
-pip install -r requirements.txt
 python -m app.main
 ```
 
-✅ Backend chạy tại: http://localhost:8000
+Backend: `http://localhost:8000`
 
-### Bước 5: Chạy Frontend
+## 3. Chay camera bridge
 
-**Cách 1: Mở trực tiếp**
-- Double-click file `frontend_v3/index.html`
+Sua `backend_v3\.env` de tro dung ESP32-CAM:
 
-**Cách 2: Live Server (Khuyên dùng)**
-- Cài extension "Live Server" trong VS Code
-- Right-click `index.html` → "Open with Live Server"
-
-✅ Frontend chạy tại: http://localhost:5500
-
----
-
-## 📱 KIỂM TRA HỆ THỐNG
-
-### 1. Kiểm tra Backend
-Mở trình duyệt: http://localhost:8000/docs
-
-Bạn sẽ thấy API documentation (Swagger UI)
-
-### 2. Kiểm tra Frontend
-Mở: http://localhost:5500 (hoặc file index.html)
-
-Bạn sẽ thấy Dashboard với:
-- 4 thẻ thống kê
-- 2 biểu đồ
-- Bảng xe đang đỗ
-
-### 3. Test API đầu tiên
-
-**Kiểm tra map chỗ đỗ:**
-```bash
-curl http://localhost:8000/api/v1/slots/map
+```env
+MQTT_BROKER=127.0.0.1
+MQTT_BROKER_PORT=1883
+ESP32_CAM_CAPTURE_URL=http://IP_ESP32_CAM/capture
+BACKEND_API_BASE_URL=http://localhost:8000/api/v1
 ```
 
-Bạn sẽ thấy 20 chỗ đỗ đã được tạo từ `init_data.py`.
+Chay:
 
----
-
-## 🎯 SỬ DỤNG HỆ THỐNG
-
-### 1. Đăng ký thẻ mới
-
-1. Vào trang "Đăng ký thẻ"
-2. Điền thông tin:
-   - Họ tên: Nguyễn Văn A
-   - SĐT: 0123456789
-   - Biển số: 29A-12345
-   - Loại xe: Xe máy
-   - UID thẻ: 0xa3d6ce05
-3. Chọn gói cước: Theo lượt
-4. Nhấn "Đăng ký"
-
-### 2. Quét thẻ RFID (Giả lập)
-
-**Test check-in:**
-```bash
-curl -X POST http://localhost:8000/api/v1/rfid/scan \
-  -H "Content-Type: application/json" \
-  -d '{"card_uid": "0xa3d6ce05"}'
+```powershell
+cd E:\PBL5-SmartParking_ESP32
+conda activate pbl5-ai
+python backend_v3\camera_bridge.py
 ```
 
-**Kết quả:**
-```json
-{
-  "success": true,
-  "action": "check_in",
-  "message": "Chào mừng! Vui lòng vào.",
-  "slot_number": "A01",
-  "customer_name": "Nguyễn Văn A"
-}
+## 4. Chay frontend
+
+```powershell
+cd E:\PBL5-SmartParking_ESP32\frontend_v3
+python -m http.server 5500
 ```
 
-**Test check-out:**
-```bash
-# Quét lại thẻ sau vài phút
-curl -X POST http://localhost:8000/api/v1/rfid/scan \
-  -H "Content-Type: application/json" \
-  -d '{"card_uid": "0xa3d6ce05"}'
+Mo:
+
+```text
+http://localhost:5500
 ```
 
-**Kết quả:**
-```json
-{
-  "success": true,
-  "action": "check_out",
-  "message": "Tạm biệt! Phí đỗ xe: 5,000đ",
-  "fee": 5000,
-  "duration_minutes": 60
-}
-```
+Khong mo theo duong dan co lap lai `frontend_v3/frontend_v3/...`.
 
-### 3. Xem thống kê
+## 5. Upload firmware ESP32 RFID/barrier
 
-- **Dashboard**: Xem tổng quan
-- **Map chỗ đỗ**: Xem chỗ trống/đang đỗ
-- **Lịch sử**: Xem tất cả phiên ra vào
-- **Doanh thu**: Xem biểu đồ doanh thu
+Upload cac file sau len ESP32:
 
----
+- `firmware/main.py` upload voi ten `main.py`
+- `firmware/esp32_config.py`
+- `firmware/mfrc522.py`
+- `firmware/lcd_i2c.py`
 
-## 🔧 ESP32 (Tùy chọn)
+Trong `firmware/esp32_config.py`, dung MQTT local:
 
-### Cấu hình WiFi
-
-Sửa file `firmware/esp32_config.py`:
 ```python
-WIFI_SSID = "TenWiFi"
-WIFI_PASSWORD = "MatKhauWiFi"
-API_URL = "http://192.168.1.100:8000/api/v1/rfid/scan"
+MQTT_BROKER = "IP_MAY_TINH_CHAY_MOSQUITTO"
+MQTT_BROKER_PORT = 1883
+MQTT_TOPIC_RFID = "pbl5/smartparking/rfid_scanned"
+MQTT_TOPIC_GATE = "pbl5/smartparking/gate"
 ```
 
-### Upload lên ESP32
+Khong upload `firmware/legacy_esp32_main.py` cho luong hien tai. File nay la
+firmware HTTP cu.
 
-**Dùng Thonny:**
-1. Mở Thonny IDE
-2. Kết nối ESP32 qua USB
-3. Upload tất cả files trong `firmware/`
-4. Chạy `esp32_main.py`
+## 6. Luong van hanh chinh
 
-**Dùng ampy:**
-```bash
-pip install adafruit-ampy
-ampy --port COM3 put firmware/esp32_config.py
-ampy --port COM3 put firmware/esp32_main.py
-ampy --port COM3 put firmware/mfrc522.py
-ampy --port COM3 put firmware/lcd_i2c.py
+```text
+Quet RFID
+-> ESP32 publish MQTT UID
+-> camera_bridge.py nhan UID
+-> ESP32-CAM chup 2-3 frame
+-> Backend OCR + validate RFID/bien so
+-> Luu parking_events/sessions
+-> Backend publish MQTT open gate
+-> ESP32 mo barrier
 ```
 
-### Kết nối phần cứng
+Endpoint that su xu ly vao/ra:
 
-**RFID RC522:**
-- SDA → GPIO 5
-- SCK → GPIO 18
-- MOSI → GPIO 23
-- MISO → GPIO 19
-- RST → GPIO 22
-- 3.3V → 3.3V
-- GND → GND
-
-**LCD I2C:**
-- SDA → GPIO 21
-- SCL → GPIO 22
-- VCC → 5V
-- GND → GND
-
-**Servo (Cổng):**
-- Signal → GPIO 13
-- VCC → 5V
-- GND → GND
-
----
-
-## 🎨 CÁC TRANG GIAO DIỆN
-
-1. **Dashboard** (`/index.html`)
-   - Thống kê tổng quan
-   - Biểu đồ doanh thu
-   - Xe đang đỗ
-
-2. **Đăng ký thẻ** (`/pages/register-card.html`)
-   - Form đăng ký đầy đủ
-   - Chọn gói cước
-
-3. **Khách hàng** (`/pages/customers.html`)
-   - Danh sách khách hàng
-   - Tìm kiếm, filter
-
-4. **Xe** (`/pages/vehicles.html`)
-   - Danh sách xe
-   - Tìm kiếm theo biển số
-
-5. **Map chỗ đỗ** (`/pages/parking-map.html`)
-   - Hiển thị grid chỗ đỗ
-   - Màu sắc theo trạng thái
-   - Real-time update
-
-6. **Gói cước** (`/pages/packages.html`)
-   - Danh sách gói cước
-   - Filter theo loại
-
-7. **Lịch sử** (`/pages/sessions.html`)
-   - Lịch sử ra vào
-   - Filter theo ngày
-
-8. **Doanh thu** (`/pages/revenue.html`)
-   - Biểu đồ doanh thu
-   - Giao dịch gần đây
-
----
-
-## 🐛 XỬ LÝ LỖI THƯỜNG GẶP
-
-### Lỗi: "Connection refused" khi chạy Backend
-
-**Nguyên nhân:** MongoDB chưa chạy
-
-**Giải pháp:**
-```bash
-# Windows: Mở Services → Tìm MongoDB → Start
-# Linux/Mac: sudo systemctl start mongod
+```text
+POST /api/v1/access-events/rfid-camera
 ```
 
-### Lỗi: Frontend không kết nối Backend
+Endpoint cu:
 
-**Nguyên nhân:** CORS hoặc URL sai
-
-**Giải pháp:**
-1. Kiểm tra Backend đã chạy: http://localhost:8000/health
-2. Kiểm tra `frontend_v3/assets/js/api.js`:
-   ```javascript
-   const API_BASE_URL = 'http://localhost:8000/api/v1';
-   ```
-
-### Lỗi: "Module not found" khi chạy Backend
-
-**Nguyên nhân:** Chưa cài dependencies
-
-**Giải pháp:**
-```bash
-cd backend_v3
-pip install -r requirements.txt
+```text
+POST /api/v1/rfid/scan
 ```
 
-### Lỗi: ESP32 không kết nối WiFi
+chi con dung cho dang ky/test. Endpoint nay khong tao session, khong tinh phi,
+khong mo cong.
 
-**Nguyên nhân:** Sai SSID/Password
+## 7. Dang ky the tren web
 
-**Giải pháp:**
-1. Kiểm tra `firmware/esp32_config.py`
-2. Kiểm tra WiFi 2.4GHz (ESP32 không hỗ trợ 5GHz)
+1. Mo `http://localhost:5500/pages/register-card.html`.
+2. Bam `Quet the`.
+3. Quet the tren ESP32.
+4. UID se hien tren form qua `/api/v1/rfid/latest-scan`.
+5. Nhap thong tin khach va xe.
+6. Chon:
+   - `Theo luot`: khong tao package, tinh phi khi xe ra.
+   - `Theo ngay`/`Theo thang`: tao package cho dung xe vua dang ky.
+7. Bam `Dang ky`.
 
----
+Backend se validate:
 
-## 📊 DỮ LIỆU MẪU
+- Customer phai active.
+- Vehicle phai active va thuoc dung customer.
+- Moi vehicle chi co mot RFID card active.
+- Package ngay/thang chi duoc tao khi vehicle chua co package active con han.
 
-### Tạo dữ liệu test
+## 8. Kiem tra nhanh
 
-**1. Khởi tạo 20 chỗ đỗ:**
-```bash
-curl -X POST http://localhost:8000/api/v1/slots/initialize?total_slots=20
+Backend:
+
+```powershell
+curl http://localhost:8000/health
 ```
 
-**2. Tạo khách hàng mẫu:**
-```bash
-curl -X POST http://localhost:8000/api/v1/customers \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Nguyễn Văn A",
-    "phone": "0123456789",
-    "email": "nguyenvana@email.com",
-    "customer_type": "walk_in"
-  }'
+Registration/test endpoint:
+
+```powershell
+curl -X POST http://localhost:8000/api/v1/rfid/scan `
+  -H "Content-Type: application/json" `
+  -d "{\"card_uid\":\"0xa3d6ce05\"}"
 ```
 
-**3. Tạo xe mẫu:**
-```bash
-curl -X POST http://localhost:8000/api/v1/vehicles \
-  -H "Content-Type: application/json" \
-  -d '{
-    "customer_id": "CUST001",
-    "plate_number": "29A-12345",
-    "vehicle_type": "motorbike",
-    "brand": "Honda",
-    "color": "Đỏ"
-  }'
-```
+Ket qua dung la `success: false` va `open_gate: false`, vi endpoint nay khong
+duoc phep mo cong.
 
----
+## 9. Loi thuong gap
 
-## 🎯 CHECKLIST KHỞI ĐỘNG
-
-- [ ] MongoDB đã cài và chạy
-- [ ] File `.env` đã tạo: `copy .env.local .env` hoặc `copy .env.atlas .env`
-- [ ] Kiểm tra kết nối: `python check_mongodb.py`
-- [ ] Dependencies đã cài: `pip install -r requirements.txt`
-- [ ] Khởi tạo dữ liệu: `python init_data.py`
-- [ ] Backend chạy thành công: http://localhost:8000/docs
-- [ ] Frontend mở được: `index.html`
-- [ ] API test thành công: `/health` endpoint
-- [ ] Dashboard hiển thị dữ liệu đúng
-
----
-
-## 📞 TRỢ GIÚP
-
-### Tài liệu chi tiết
-- `SETUP_COMPLETE_V3.md` - Hướng dẫn đầy đủ
-- `UPGRADE_PLAN.md` - Kế hoạch nâng cấp
-- `PROJECT_STATUS.md` - Tình trạng dự án
-- `docs/GUIDE.md` - Hướng dẫn sử dụng
-
-### API Documentation
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
-
-### Kiểm tra logs
-- Backend: Xem terminal đang chạy `python -m app.main`
-- Frontend: Mở DevTools (F12) → Console tab
-- ESP32: Mở Serial Monitor trong Thonny
-
----
-
-## ✅ HOÀN TẤT!
-
-Hệ thống đã sẵn sàng sử dụng! 🎉
-
-**Bước tiếp theo:**
-1. Thử đăng ký thẻ mới
-2. Test quét thẻ RFID (API hoặc ESP32)
-3. Xem thống kê trên Dashboard
-4. Khám phá các tính năng khác
-
-**Chúc bạn thành công! 🚀**
+- LCD hien MQTT failed/stopped: kiem tra IP broker trong `esp32_config.py`, port
+  `1883`, firewall Windows va Mosquitto dang chay.
+- Backend ket noi MongoDB loi: kiem tra MongoDB service hoac lenh `mongod`.
+- Barrier khong mo du log accepted: kiem tra backend publish MQTT, ESP32 subscribe
+  topic gate, topic trong `.env` va `esp32_config.py` phai trung nhau.
+- Anh/OCR cham: xem dong `[METRICS]` trong camera bridge de biet cham o capture,
+  rank, OCR hay backend.
