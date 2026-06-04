@@ -40,6 +40,28 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Datasets / local training data
+CarTGMT/
+car_long/
+PBL5-PlateTrainer/
+dataset/
+datasets/
+data/
+*.zip
+*.rar
+*.7z
+
+# Image files
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.gif
+*.webp
+*.tif
+*.tiff
+*.heic
+
 # IDE / OS
 .DS_Store
 Thumbs.db
