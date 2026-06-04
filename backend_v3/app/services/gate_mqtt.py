@@ -4,12 +4,14 @@ MQTT gate publisher used by backend access decisions.
 from __future__ import annotations
 
 import logging
-import os
+import json
 import threading
 import time
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import paho.mqtt.client as mqtt
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -18,12 +20,13 @@ class GateMQTTPublisher:
     """Small persistent MQTT publisher for gate commands."""
 
     def __init__(self) -> None:
-        self.broker = os.getenv("MQTT_BROKER", "broker.hivemq.com")
-        self.port = int(os.getenv("MQTT_PORT", "1883"))
-        self.keepalive = int(os.getenv("MQTT_KEEPALIVE", "60"))
-        self.topic_gate = os.getenv("MQTT_TOPIC_GATE", "pbl5/smartparking/gate")
-        self.client_id = os.getenv("BACKEND_MQTT_CLIENT_ID", "SmartParkingBackendGate")
-        self.qos = int(os.getenv("MQTT_QOS", "1"))
+        self.broker = settings.MQTT_BROKER
+        self.port = settings.MQTT_PORT
+        self.keepalive = settings.MQTT_KEEPALIVE
+        self.topic_gate = settings.MQTT_TOPIC_GATE
+        self.topic_parking_status = settings.MQTT_TOPIC_PARKING_STATUS
+        self.client_id = settings.BACKEND_MQTT_CLIENT_ID
+        self.qos = settings.MQTT_QOS
 
         self._client: Optional[mqtt.Client] = None
         self._connected = threading.Event()
@@ -98,6 +101,44 @@ class GateMQTTPublisher:
             return True
         except Exception as exc:
             logger.error("[MQTT] Publish OPEN exception: %s", exc)
+            self._connected.clear()
+            return False
+
+    def publish_parking_status(self, status: Dict[str, Any], timeout: float = 3.0) -> bool:
+        if not self.ensure_connected(timeout=timeout):
+            return False
+
+        assert self._client is not None
+        payload = json.dumps(status, ensure_ascii=True, separators=(",", ":"))
+        try:
+            info = self._client.publish(
+                self.topic_parking_status,
+                payload,
+                qos=self.qos,
+                retain=True,
+            )
+            if info.rc != mqtt.MQTT_ERR_SUCCESS:
+                logger.error(
+                    "[MQTT] Publish parking status failed rc=%s topic=%s",
+                    info.rc,
+                    self.topic_parking_status,
+                )
+                return False
+
+            info.wait_for_publish(timeout=timeout)
+            if not info.is_published():
+                logger.error("[MQTT] Publish parking status timed out topic=%s", self.topic_parking_status)
+                return False
+
+            logger.info(
+                "[PARKING] Status sent topic=%s available=%s total=%s",
+                self.topic_parking_status,
+                status.get("available"),
+                status.get("total"),
+            )
+            return True
+        except Exception as exc:
+            logger.error("[MQTT] Publish parking status exception: %s", exc)
             self._connected.clear()
             return False
 

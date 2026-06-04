@@ -7,8 +7,8 @@ Cấu hình tập trung cho toàn bộ hệ thống ESP32
 # WI-FI CONFIGURATION
 # ═══════════════════════════════════════════════════
 
-WIFI_SSID = "Note13"
-WIFI_PASS = "baokhuong2332"           # ⚠️ THAY ĐỔI: Mật khẩu Wi-Fi
+WIFI_SSID = "S House"
+WIFI_PASS = "Phuocbaotinh"           # ⚠️ THAY ĐỔI: Mật khẩu Wi-Fi
 WIFI_TIMEOUT = 20                    # Timeout kết nối (giây)
 WIFI_RETRY_DELAY = 5                 # Delay giữa các lần thử lại (giây)
 
@@ -16,7 +16,7 @@ WIFI_RETRY_DELAY = 5                 # Delay giữa các lần thử lại (giâ
 # BACKEND API CONFIGURATION
 # ═══════════════════════════════════════════════════
 
-API_BASE_URL = "http://10.129.42.202:8000/api/v1"  # ⚠️ THAY ĐỔI: IP máy tính chạy backend
+API_BASE_URL = "http://192.168.1.48:8000/api/v1"  # ⚠️ THAY ĐỔI: IP máy tính chạy backend
 API_TIMEOUT = 10                     # Timeout cho API request (giây)
 API_RETRY = 3                        # Số lần thử lại khi lỗi
 
@@ -24,12 +24,13 @@ API_RETRY = 3                        # Số lần thử lại khi lỗi
 # MQTT CONFIGURATION (ESP32 thường -> Python camera_bridge.py)
 # ═══════════════════════════════════════════════════
 
-MQTT_BROKER = "broker.hivemq.com"
+MQTT_BROKER = "192.168.1.48" # ⚠️ THAY ĐỔI: IP máy tính chạy backend
 MQTT_PORT = 1883
 MQTT_KEEPALIVE = 60
 MQTT_CLIENT_ID = "esp32-gate-01"
 MQTT_TOPIC_RFID = "pbl5/smartparking/rfid_scanned"
 MQTT_TOPIC_GATE = "pbl5/smartparking/gate"
+MQTT_TOPIC_PARKING_STATUS = "pbl5/smartparking/parking_status"
 MQTT_RECONNECT_DELAY = 5
 
 # ═══════════════════════════════════════════════════

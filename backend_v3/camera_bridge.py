@@ -43,6 +43,13 @@ os.environ.setdefault("FLAGS_use_onednn", "0")
 
 BACKEND_DIR = Path(__file__).resolve().parent
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(BACKEND_DIR / ".env")
+except ImportError:
+    pass
+
 
 def _env_int(name: str, default: int) -> int:
     try:
@@ -71,7 +78,7 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-MQTT_BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")
+MQTT_BROKER = os.getenv("MQTT_BROKER", "127.0.0.1")
 MQTT_PORT = _env_int("MQTT_PORT", 1883)
 MQTT_KEEPALIVE = _env_int("MQTT_KEEPALIVE", 60)
 MQTT_CLIENT_ID = os.getenv("MQTT_CLIENT_ID", "CameraBridge")
@@ -240,6 +247,30 @@ class CaptureBatch:
     card_uid: str
     capture_batch_id: str
     frames: List[CapturedFrame]
+
+
+@dataclass
+class ProcessingMetrics:
+    rfid_received_at: float
+    worker_started_at: float = 0.0
+    vehicle_center_delay_started_at: float = 0.0
+    vehicle_center_delay_finished_at: float = 0.0
+    capture_started_at: float = 0.0
+    capture_finished_at: float = 0.0
+    ranking_started_at: float = 0.0
+    ranking_finished_at: float = 0.0
+    ocr_started_at: float = 0.0
+    ocr_finished_at: float = 0.0
+    backend_post_started_at: float = 0.0
+    backend_post_finished_at: float = 0.0
+    worker_finished_at: float = 0.0
+    captured_frame_count: int = 0
+    selected_ocr_frame_count: int = 0
+    ocr_plate_found: bool = False
+    backend_decision: Optional[str] = None
+    backend_action: Optional[str] = None
+    backend_open_gate: Optional[bool] = None
+    backend_reason: Optional[str] = None
 
 
 @dataclass
@@ -549,6 +580,116 @@ def flatten_paddle_result(result: Any) -> List[Tuple[str, float]]:
 
 def utcnow() -> datetime:
     return datetime.utcnow()
+
+
+def monotonic_to_utc_iso(monotonic_value: float, reference_monotonic: float, reference_utc: datetime) -> Optional[str]:
+    if monotonic_value <= 0:
+        return None
+    elapsed = monotonic_value - reference_monotonic
+    return (reference_utc + timedelta(seconds=elapsed)).isoformat()
+
+
+def elapsed_ms(start: float, end: float) -> Optional[int]:
+    if start <= 0 or end <= 0:
+        return None
+    return int(round((end - start) * 1000))
+
+
+def build_processing_metrics(metrics: ProcessingMetrics) -> Dict[str, Any]:
+    reference_monotonic = metrics.worker_started_at or time.monotonic()
+    reference_utc = utcnow() - timedelta(seconds=max(0.0, time.monotonic() - reference_monotonic))
+
+    timestamps = {
+        "rfid_received_at": monotonic_to_utc_iso(metrics.rfid_received_at, reference_monotonic, reference_utc),
+        "worker_started_at": monotonic_to_utc_iso(metrics.worker_started_at, reference_monotonic, reference_utc),
+        "vehicle_center_delay_started_at": monotonic_to_utc_iso(
+            metrics.vehicle_center_delay_started_at,
+            reference_monotonic,
+            reference_utc,
+        ),
+        "vehicle_center_delay_finished_at": monotonic_to_utc_iso(
+            metrics.vehicle_center_delay_finished_at,
+            reference_monotonic,
+            reference_utc,
+        ),
+        "capture_started_at": monotonic_to_utc_iso(metrics.capture_started_at, reference_monotonic, reference_utc),
+        "capture_finished_at": monotonic_to_utc_iso(metrics.capture_finished_at, reference_monotonic, reference_utc),
+        "ranking_started_at": monotonic_to_utc_iso(metrics.ranking_started_at, reference_monotonic, reference_utc),
+        "ranking_finished_at": monotonic_to_utc_iso(metrics.ranking_finished_at, reference_monotonic, reference_utc),
+        "ocr_started_at": monotonic_to_utc_iso(metrics.ocr_started_at, reference_monotonic, reference_utc),
+        "ocr_finished_at": monotonic_to_utc_iso(metrics.ocr_finished_at, reference_monotonic, reference_utc),
+        "backend_post_started_at": monotonic_to_utc_iso(
+            metrics.backend_post_started_at,
+            reference_monotonic,
+            reference_utc,
+        ),
+        "backend_post_finished_at": monotonic_to_utc_iso(
+            metrics.backend_post_finished_at,
+            reference_monotonic,
+            reference_utc,
+        ),
+        "worker_finished_at": monotonic_to_utc_iso(metrics.worker_finished_at, reference_monotonic, reference_utc),
+    }
+
+    durations = {
+        "queue_wait_ms": elapsed_ms(metrics.rfid_received_at, metrics.worker_started_at),
+        "vehicle_center_delay_ms": elapsed_ms(
+            metrics.vehicle_center_delay_started_at,
+            metrics.vehicle_center_delay_finished_at,
+        ),
+        "capture_ms": elapsed_ms(metrics.capture_started_at, metrics.capture_finished_at),
+        "frame_ranking_ms": elapsed_ms(metrics.ranking_started_at, metrics.ranking_finished_at),
+        "ocr_ms": elapsed_ms(metrics.ocr_started_at, metrics.ocr_finished_at),
+        "backend_post_ms": elapsed_ms(metrics.backend_post_started_at, metrics.backend_post_finished_at),
+        "end_to_end_ms": elapsed_ms(metrics.rfid_received_at, metrics.worker_finished_at),
+        "decision_pipeline_ms": elapsed_ms(metrics.worker_started_at, metrics.backend_post_finished_at),
+    }
+
+    return {
+        "timestamps": timestamps,
+        "durations": durations,
+        "counts": {
+            "captured_frames": metrics.captured_frame_count,
+            "selected_ocr_frames": metrics.selected_ocr_frame_count,
+        },
+        "ocr": {
+            "plate_found": metrics.ocr_plate_found,
+        },
+        "backend": {
+            "decision": metrics.backend_decision,
+            "action": metrics.backend_action,
+            "open_gate": metrics.backend_open_gate,
+            "reason": metrics.backend_reason,
+        },
+        "config": {
+            "burst_count": BURST_COUNT,
+            "burst_interval_sec": BURST_INTERVAL_SEC,
+            "vehicle_center_delay_sec": VEHICLE_CENTER_DELAY_SEC,
+            "ocr_max_images": OCR_MAX_IMAGES,
+            "ocr_timeout_sec": OCR_TIMEOUT_SEC,
+            "plate_detector_conf": PLATE_DETECTOR_CONF,
+            "plate_detector_fallback_full_image": PLATE_DETECTOR_FALLBACK_FULL_IMAGE,
+            "backend_access_event_url": BACKEND_ACCESS_EVENT_URL,
+            "esp32_cam_url": ESP32_CAM_URL,
+        },
+    }
+
+
+def log_metrics_summary(uid: str, metrics: ProcessingMetrics) -> None:
+    summary = build_processing_metrics(metrics)
+    durations = summary["durations"]
+    logger.info(
+        "[METRICS] uid=%s queue=%sms capture=%sms rank=%sms ocr=%sms backend=%sms total=%sms frames=%s selected=%s",
+        uid,
+        durations.get("queue_wait_ms"),
+        durations.get("capture_ms"),
+        durations.get("frame_ranking_ms"),
+        durations.get("ocr_ms"),
+        durations.get("backend_post_ms"),
+        durations.get("end_to_end_ms"),
+        metrics.captured_frame_count,
+        metrics.selected_ocr_frame_count,
+    )
 
 
 def safe_uid(value: str) -> str:
@@ -1021,12 +1162,48 @@ def build_frame_metadata(batch: CaptureBatch) -> List[Dict[str, Any]]:
 # ==============================================================================
 
 
+def is_registration_mode_enabled() -> bool:
+    try:
+        response = _http.get(
+            f"{BACKEND_API_BASE_URL}/rfid/registration-mode",
+            timeout=(BACKEND_CONNECT_TIMEOUT, 3.0),
+        )
+        response.raise_for_status()
+        data = response.json()
+        return bool(data.get("success") and data.get("enabled"))
+    except requests.RequestException as exc:
+        logger.warning("[REGISTRATION] Failed to read registration mode: %s", exc)
+        return False
+
+
+def post_registration_scan(card_uid: str) -> Optional[Dict[str, Any]]:
+    try:
+        response = _http.post(
+            f"{BACKEND_API_BASE_URL}/rfid/scan",
+            json={"card_uid": card_uid, "gate_id": GATE_ID},
+            timeout=(BACKEND_CONNECT_TIMEOUT, BACKEND_READ_TIMEOUT),
+        )
+        response.raise_for_status()
+        result = response.json()
+        logger.info(
+            "[REGISTRATION] UID=%s action=%s already_registered=%s",
+            card_uid,
+            result.get("action"),
+            result.get("already_registered"),
+        )
+        return result
+    except requests.RequestException as exc:
+        logger.error("[REGISTRATION] Failed to forward UID=%s: %s", card_uid, exc)
+        return None
+
+
 def post_access_event_to_backend(
     *,
     batch: CaptureBatch,
     plate_number: Optional[str],
     confidence: float,
     frame_metadata: Sequence[Dict[str, Any]],
+    processing_metrics: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
     opened_files = []
     files = []
@@ -1044,6 +1221,7 @@ def post_access_event_to_backend(
             "ocr_plate": plate_number or "",
             "ocr_confidence": f"{float(confidence):.4f}",
             "frame_metadata": json.dumps(list(frame_metadata), ensure_ascii=False),
+            "processing_metrics": json.dumps(processing_metrics, ensure_ascii=False),
         }
 
         logger.info(
@@ -1133,7 +1311,7 @@ def enqueue_uid(card_uid: str) -> bool:
             logger.warning("[MQTT] UID cooldown active: %s %.2fs", uid, now - last_seen)
             return False
         try:
-            task_queue.put_nowait(RFIDEvent(card_uid=uid, received_at=time.time()))
+            task_queue.put_nowait(RFIDEvent(card_uid=uid, received_at=time.monotonic()))
             _last_uid_at[uid] = now
             logger.info("[MQTT] RFID queued uid=%s queue_size=%s", uid, task_queue.qsize())
             return True
@@ -1161,12 +1339,30 @@ def process_rfid_event(event: RFIDEvent) -> None:
         logger.warning("[RFID] Duplicate processing skipped uid=%s", uid)
         return
 
+    metrics = ProcessingMetrics(rfid_received_at=event.received_at)
+    metrics.worker_started_at = time.monotonic()
     try:
         logger.info("=" * 80)
         logger.info("[RFID] UID received: %s", uid)
-        time.sleep(VEHICLE_CENTER_DELAY_SEC)
+        if is_registration_mode_enabled():
+            logger.info("[REGISTRATION] Registration mode active; skipping camera/OCR for uid=%s", uid)
+            metrics.backend_post_started_at = time.monotonic()
+            result = post_registration_scan(uid)
+            metrics.backend_post_finished_at = time.monotonic()
+            metrics.backend_decision = "registration"
+            metrics.backend_action = result.get("action") if result else None
+            metrics.backend_open_gate = False
+            metrics.backend_reason = None if result else "registration_forward_failed"
+            return
 
+        metrics.vehicle_center_delay_started_at = time.monotonic()
+        time.sleep(VEHICLE_CENTER_DELAY_SEC)
+        metrics.vehicle_center_delay_finished_at = time.monotonic()
+
+        metrics.capture_started_at = time.monotonic()
         batch = capture_burst(uid)
+        metrics.capture_finished_at = time.monotonic()
+        metrics.captured_frame_count = len(batch.frames)
         if not batch.frames:
             logger.error("[ERROR] Camera burst failed: no images captured")
             return
@@ -1178,27 +1374,47 @@ def process_rfid_event(event: RFIDEvent) -> None:
                 publish_gate_open_local()
             return
 
+        metrics.ranking_started_at = time.monotonic()
         ranked_frames = rank_frames_for_ocr(batch.frames)
+        metrics.ranking_finished_at = time.monotonic()
+        metrics.selected_ocr_frame_count = len(ranked_frames)
+
+        metrics.ocr_started_at = time.monotonic()
         plate_number, confidence = extract_plate_number_from_frames(ranked_frames, timeout=OCR_TIMEOUT_SEC)
+        metrics.ocr_finished_at = time.monotonic()
+        metrics.ocr_plate_found = bool(plate_number)
         if not plate_number:
             logger.warning("[OCR] No valid plate detected. Backend will apply fallback policy.")
 
         metadata = build_frame_metadata(batch)
+        metrics.backend_post_started_at = time.monotonic()
         result = post_access_event_to_backend(
             batch=batch,
             plate_number=plate_number,
             confidence=confidence,
             frame_metadata=metadata,
+            processing_metrics=build_processing_metrics(metrics),
         )
+        metrics.backend_post_finished_at = time.monotonic()
         if result is None:
             logger.warning("[WARNING] Access rejected: backend unavailable")
         elif result.get("decision") == "accepted":
+            metrics.backend_decision = result.get("decision")
+            metrics.backend_action = result.get("action")
+            metrics.backend_open_gate = result.get("open_gate")
+            metrics.backend_reason = result.get("reason")
             logger.info("[ACCESS] Accepted action=%s session=%s", result.get("action"), result.get("session_id"))
         else:
+            metrics.backend_decision = result.get("decision")
+            metrics.backend_action = result.get("action")
+            metrics.backend_open_gate = result.get("open_gate")
+            metrics.backend_reason = result.get("reason")
             logger.warning("[WARNING] Access rejected: %s", result.get("reason", "unknown"))
     except Exception as exc:
         logger.exception("[ERROR] Worker failed for uid=%s: %s", uid, exc)
     finally:
+        metrics.worker_finished_at = time.monotonic()
+        log_metrics_summary(uid, metrics)
         mark_done(uid)
         gc.collect()
         logger.info("[RFID] Processing finished: %s", uid)

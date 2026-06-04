@@ -9,7 +9,6 @@
     <link rel="stylesheet" href="../assets/css/main.css">
 </head>
 <body>
-    <!-- Sidebar -->
     <div class="sidebar">
         <div class="sidebar-header">
             <h4><i class="bi bi-car-front-fill"></i> Smart Parking</h4>
@@ -45,7 +44,6 @@
         </nav>
     </div>
 
-    <!-- Main Content -->
     <div class="main-content">
         <div class="header">
             <h2><i class="bi bi-people"></i> Quản lý khách hàng</h2>
@@ -56,7 +54,6 @@
             </div>
         </div>
 
-        <!-- Search & Filter -->
         <div class="card mb-4">
             <div class="card-body">
                 <div class="row g-3">
@@ -80,7 +77,6 @@
             </div>
         </div>
 
-        <!-- Customers Table -->
         <div class="card">
             <div class="card-body">
                 <div class="table-responsive">
@@ -93,17 +89,160 @@
                                 <th>Email</th>
                                 <th>Loại</th>
                                 <th>Số xe</th>
+                                <th>Trạng thái</th>
                                 <th>Ngày tạo</th>
                                 <th>Thao tác</th>
                             </tr>
                         </thead>
                         <tbody id="customersTable">
                             <tr>
-                                <td colspan="8" class="text-center">Đang tải...</td>
+                                <td colspan="9" class="text-center">Đang tải...</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="customerDetailModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="customerDetailTitle">Chi tiết khách hàng</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3 mb-4" id="customerSummary"></div>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="mb-0"><i class="bi bi-car-front"></i> Xe đã đăng ký</h6>
+                        <button type="button" class="btn btn-outline-primary btn-sm" id="editCurrentCustomerBtn">
+                            <i class="bi bi-pencil-square"></i> Sửa khách hàng
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Mã xe</th>
+                                    <th>Biển số</th>
+                                    <th>Loại xe</th>
+                                    <th>Thẻ RFID</th>
+                                    <th>Trạng thái</th>
+                                    <th>Cập nhật</th>
+                                    <th>Thao tác</th>
+                                </tr>
+                            </thead>
+                            <tbody id="customerVehiclesTable"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="customerEditModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <form id="customerEditForm">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Sửa thông tin khách hàng</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" id="editCustomerId">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Họ và tên *</label>
+                                <input type="text" class="form-control" id="editCustomerName" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Số điện thoại</label>
+                                <input type="tel" class="form-control" id="editCustomerPhone">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Email</label>
+                                <input type="email" class="form-control" id="editCustomerEmail">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">CMND/CCCD</label>
+                                <input type="text" class="form-control" id="editCustomerIdCard">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Loại khách</label>
+                                <select class="form-select" id="editCustomerType">
+                                    <option value="walk_in">Khách vãng lai</option>
+                                    <option value="monthly">Khách tháng</option>
+                                    <option value="vip">VIP</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Trạng thái</label>
+                                <select class="form-select" id="editCustomerActive">
+                                    <option value="true">Hoạt động</option>
+                                    <option value="false">Ngừng sử dụng</option>
+                                </select>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Địa chỉ</label>
+                                <input type="text" class="form-control" id="editCustomerAddress">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Ghi chú</label>
+                                <textarea class="form-control" id="editCustomerNotes" rows="3"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save"></i> Lưu khách hàng
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="vehicleEditModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form id="vehicleEditForm">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Sửa thông tin xe</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" id="editVehicleId">
+                        <div class="mb-3">
+                            <label class="form-label">Biển số *</label>
+                            <input type="text" class="form-control" id="editVehiclePlate" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Loại xe</label>
+                            <select class="form-select" id="editVehicleType">
+                                <option value="motorbike">Xe máy</option>
+                                <option value="car">Ô tô</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Trạng thái</label>
+                            <select class="form-select" id="editVehicleActive">
+                                <option value="true">Hoạt động</option>
+                                <option value="false">Ngừng sử dụng</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save"></i> Lưu xe
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>

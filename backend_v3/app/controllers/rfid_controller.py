@@ -12,7 +12,7 @@ from app.database import get_database
 from app.utils.id_generator import generate_id
 from app.utils.serializers import serialize_mongodb_document
 from app.services.fee_calculator import FeeCalculator
-from app.models.customer import CustomerType
+from app.services.parking_status import publish_parking_status_update
 from app.models.session import SessionStatus
 from app.models.parking_slot import SlotStatus
 
@@ -80,11 +80,13 @@ async def get_latest_scan(db: AsyncIOMotorDatabase = Depends(get_database)):
     )
     
     if latest:
+        existing_card = await db.rfid_cards.find_one({"card_uid": latest["card_uid"]})
         return {
             "success": True,
             "card_uid": latest["card_uid"],
             "scanned_at": latest["scanned_at"].isoformat(),
-            "gate_id": latest.get("gate_id", 1)
+            "gate_id": latest.get("gate_id", 1),
+            "already_registered": bool(existing_card)
         }
     else:
         return {
@@ -152,8 +154,9 @@ async def rfid_scan(request: RFIDScanRequest, db: AsyncIOMotorDatabase = Depends
     
     Logic:
     1. Check if card exists
-    2. If new card -> Auto register customer, vehicle, card
-    3. If existing card:
+    2. If new card in registration mode -> store pending scan for web registration
+    3. If new card in gate mode -> require the camera/OCR access flow
+    4. If existing card:
        - Check for active session
        - If has session -> CHECK-OUT (calculate fee)
        - If no session -> CHECK-IN (create session, assign slot)
@@ -172,6 +175,17 @@ async def rfid_scan(request: RFIDScanRequest, db: AsyncIOMotorDatabase = Depends
         "distance_cm": distance,
         "scanned_at": dt
     })
+
+    if REGISTRATION_MODE["enabled"]:
+        existing_card = await db.rfid_cards.find_one({"card_uid": card_uid})
+        logger.info(f"🆕 REGISTRATION SCAN: {card_uid}")
+        return {
+            "success": True,
+            "action": "pending_registration",
+            "message": "Thẻ đã được ghi nhận cho form đăng ký.",
+            "card_uid": card_uid,
+            "already_registered": bool(existing_card)
+        }
     
     # Check if card exists
     card = await db.rfid_cards.find_one({"card_uid": card_uid})
@@ -273,6 +287,7 @@ async def rfid_scan(request: RFIDScanRequest, db: AsyncIOMotorDatabase = Depends
                 })
             
             duration_minutes = round((exit_time - entry_time).total_seconds() / 60)
+            await publish_parking_status_update(db)
             
             return {
                 "success": True,
@@ -336,7 +351,8 @@ async def rfid_scan(request: RFIDScanRequest, db: AsyncIOMotorDatabase = Depends
                     }
                 }
             )
-            
+            await publish_parking_status_update(db)
+
             return {
                 "success": True,
                 "action": "entry",
@@ -349,122 +365,10 @@ async def rfid_scan(request: RFIDScanRequest, db: AsyncIOMotorDatabase = Depends
             }
     
     else:
-        if REGISTRATION_MODE["enabled"]:
-            logger.info(f"🆕 NEW CARD - Pending registration: {card_uid}")
-            return {
-                "success": False,
-                "action": "pending_registration",
-                "message": "Thẻ mới đã được ghi nhận. Vui lòng hoàn tất đăng ký trên web trước khi sử dụng.",
-                "card_uid": card_uid
-            }
-
-        # NEW CARD - Auto registration for walk-in customer
-        logger.info(f"🆕 NEW CARD - Auto registration: {card_uid}")
-        
-        # Generate IDs
-        customer_id = await generate_id(db, "customers", "C")
-        vehicle_id = await generate_id(db, "vehicles", "V")
-
-        # Find available slot before creating new records
-        available_slot = await db.parking_slots.find_one({"status": SlotStatus.AVAILABLE.value})
-
-        if not available_slot:
-            return {
-                "success": False,
-                "action": "denied",
-                "message": "Bãi đỗ xe đã đầy.",
-            }
-        
-        # Create customer
-        customer = {
-            "customer_id": customer_id,
-            "name": f"Khách hàng {customer_id}",
-            "phone": None,
-            "email": None,
-            "address": None,
-            "id_card": None,
-            "customer_type": CustomerType.WALK_IN.value,
-            "balance": 0.0,
-            "created_at": dt,
-            "updated_at": dt,
-            "is_active": True,
-            "notes": "Tự động tạo khi quét thẻ mới"
-        }
-        await db.customers.insert_one(customer)
-        
-        # Create vehicle
-        vehicle = {
-            "vehicle_id": vehicle_id,
-            "customer_id": customer_id,
-            "plate_number": f"XX-{vehicle_id[-4:]}",
-            "vehicle_type": "motorbike",
-            "brand": None,
-            "model": None,
-            "color": None,
-            "created_at": dt,
-            "updated_at": dt,
-            "is_active": True
-        }
-        await db.vehicles.insert_one(vehicle)
-        
-        # Create RFID card
-        card_doc = {
-            "card_uid": card_uid,
-            "customer_id": customer_id,
-            "vehicle_id": vehicle_id,
-            "status": "active",
-            "issued_at": dt,
-            "expire_at": None,
-            "created_at": dt,
-            "notes": "Tự động tạo"
-        }
-        await db.rfid_cards.insert_one(card_doc)
-        
-        # Create first session
-        session_id = await generate_id(db, "sessions", "S")
-        
-        session = {
-            "session_id": session_id,
-            "card_uid": card_uid,
-            "customer_id": customer_id,
-            "vehicle_id": vehicle_id,
-            "slot_id": available_slot["slot_id"],
-            "entry_gate_id": gate_id,
-            "exit_gate_id": None,
-            "entry_time": dt,
-            "exit_time": None,
-            "distance_cm": distance,
-            "status": SessionStatus.IN_PROGRESS.value,
-            "parking_fee": 0.0,
-            "created_at": dt
-        }
-        
-        await db.sessions.insert_one(session)
-        
-        # Occupy slot
-        await db.parking_slots.update_one(
-            {"slot_id": available_slot["slot_id"]},
-            {
-                "$set": {
-                    "status": SlotStatus.OCCUPIED.value,
-                    "vehicle_id": vehicle_id,
-                    "session_id": session_id,
-                    "updated_at": dt
-                }
-            }
-        )
-        
-        logger.info(f"✅ Created: {customer_id}, {vehicle_id}, {card_uid}")
-        
+        logger.info(f"🆕 NEW CARD - Camera/OCR required for walk-in: {card_uid}")
         return {
-            "success": True,
-            "action": "new_registration",
-            "message": "Thẻ mới - Đã tự động đăng ký!",
-            "customer_name": customer["name"],
-            "customer_id": customer_id,
-            "vehicle_plate": vehicle["plate_number"],
-            "vehicle_id": vehicle_id,
+            "success": False,
+            "action": "walk_in_requires_camera",
+            "message": "Thẻ mới cần đi qua luồng camera/OCR để tạo khách vãng lai.",
             "card_uid": card_uid,
-            "session_id": session_id,
-            "slot_id": available_slot["slot_id"]
         }

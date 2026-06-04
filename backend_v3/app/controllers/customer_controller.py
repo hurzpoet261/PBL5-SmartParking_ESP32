@@ -135,7 +135,7 @@ async def update_customer(
     if not existing:
         raise HTTPException(status_code=404, detail="Customer not found")
     
-    update_data = {k: v for k, v in customer.dict(exclude_unset=True).items() if v is not None}
+    update_data = customer.model_dump(exclude_unset=True)
     update_data["updated_at"] = datetime.now()
     
     await db.customers.update_one(

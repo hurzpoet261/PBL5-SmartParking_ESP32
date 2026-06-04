@@ -96,8 +96,13 @@ async def update_vehicle(
     
     if not existing:
         raise HTTPException(status_code=404, detail="Vehicle not found")
+
+    if vehicle.plate_number and vehicle.plate_number != existing.get("plate_number"):
+        duplicate = await db.vehicles.find_one({"plate_number": vehicle.plate_number})
+        if duplicate:
+            raise HTTPException(status_code=400, detail="Plate number already exists")
     
-    update_data = {k: v for k, v in vehicle.dict(exclude_unset=True).items() if v is not None}
+    update_data = {k: v for k, v in vehicle.model_dump(exclude_unset=True).items() if v is not None}
     update_data["updated_at"] = datetime.now()
     
     await db.vehicles.update_one(

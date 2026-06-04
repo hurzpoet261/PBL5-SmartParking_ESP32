@@ -15,6 +15,11 @@ import network
 import time
 
 try:
+    import ujson
+except ImportError:
+    ujson = None
+
+try:
     from umqtt.simple import MQTTClient
 except ImportError:
     MQTTClient = None
@@ -67,6 +72,10 @@ gate_open_at = 0
 last_uid = None
 last_scan_ms = 0
 last_mqtt_attempt_ms = 0
+parking_available = None
+parking_total = None
+parking_occupied = None
+parking_status_at_ms = 0
 
 
 def log(message):
@@ -75,11 +84,27 @@ def log(message):
 
 
 def display(line1, line2=""):
+    log("[LCD] {} | {}".format(line1, line2))
     if lcd:
         try:
-            lcd.show_message(line1[:16], line2[:16])
+            message = line1 or line2 or ""
+            lcd.show_message(parking_status_line()[:16], message[:16])
         except Exception:
             pass
+
+
+def display_slots(message=""):
+    display(message or config.MSG_SCAN_CARD)
+
+
+def parking_status_line():
+    if parking_available is None or parking_total is None:
+        return "Free: --/--"
+    return "Free: {}/{}".format(parking_available, parking_total)
+
+
+def display_ready():
+    display_slots()
 
 
 def servo_angle(angle):
@@ -103,7 +128,7 @@ def gate_close():
     servo_angle(config.SERVO_ANGLE_CLOSE)
     gate_is_open = False
     led.off()
-    display(config.MSG_WELCOME, config.MSG_SCAN_CARD)
+    display_ready()
 
 
 def beep(freq, duration_ms):
@@ -184,6 +209,33 @@ def on_mqtt_message(topic, payload):
     if topic_text == config.MQTT_TOPIC_GATE and payload_text.upper() == "OPEN":
         gate_open()
         beep_ok()
+    elif topic_text == config.MQTT_TOPIC_PARKING_STATUS:
+        update_parking_status(payload_text)
+
+
+def update_parking_status(payload_text):
+    global parking_available, parking_total, parking_occupied, parking_status_at_ms
+
+    if ujson is None:
+        log("[PARKING] ujson not available")
+        return
+
+    try:
+        status = ujson.loads(payload_text)
+        available = int(status.get("available", 0))
+        total = int(status.get("total", 0))
+        occupied = int(status.get("occupied", max(total - available, 0)))
+    except Exception as exc:
+        log("[PARKING] Invalid status payload: {}".format(exc))
+        return
+
+    parking_available = available
+    parking_total = total
+    parking_occupied = occupied
+    parking_status_at_ms = time.ticks_ms()
+    log("[PARKING] Free {}/{} occupied={}".format(parking_available, parking_total, parking_occupied))
+
+    display_ready()
 
 
 def connect_mqtt(force=False):
@@ -220,9 +272,11 @@ def connect_mqtt(force=False):
         client.set_callback(on_mqtt_message)
         client.connect(clean_session=True)
         client.subscribe(config.MQTT_TOPIC_GATE)
+        client.subscribe(config.MQTT_TOPIC_PARKING_STATUS)
 
         log("[MQTT] Connected broker={}:{}".format(config.MQTT_BROKER, config.MQTT_PORT))
         log("[MQTT] Subscribed {}".format(config.MQTT_TOPIC_GATE))
+        log("[MQTT] Subscribed {}".format(config.MQTT_TOPIC_PARKING_STATUS))
         display("MQTT OK", "Ready")
         return True
 
@@ -301,7 +355,7 @@ def main():
     gate_close()
     connect_wifi()
     connect_mqtt(force=True)
-    display(config.MSG_WELCOME, config.MSG_SCAN_CARD)
+    display_ready()
 
     log("[SYSTEM] Ready. Scan RFID card.")
 

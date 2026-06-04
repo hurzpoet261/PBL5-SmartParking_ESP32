@@ -12,6 +12,7 @@ import logging
 from app.config import settings
 from app.database.mongodb import MongoDB
 from app.services.gate_mqtt import gate_mqtt_publisher
+from app.services.parking_status import publish_parking_status_update
 from app.controllers import (
     rfid_controller,
     customer_controller,
@@ -45,6 +46,7 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("[MQTT] Backend gate publisher is not connected; entry will reject until MQTT is ready")
     logger.info("✅ Application started successfully")
+    await publish_parking_status_update(MongoDB.db)
     
     yield
     

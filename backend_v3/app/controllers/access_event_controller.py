@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence, Union
 
@@ -24,11 +25,14 @@ from motor.motor_asyncio import AsyncIOMotorDatabase, AsyncIOMotorGridFSBucket
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
+from app.config import settings
+from app.controllers.rfid_controller import REGISTRATION_MODE
 from app.database import get_database
 from app.models.parking_slot import SlotStatus
 from app.models.session import SessionStatus
 from app.services.fee_calculator import FeeCalculator
 from app.services.gate_mqtt import gate_mqtt_publisher
+from app.services.parking_status import publish_parking_status_update
 from app.utils.id_generator import generate_id
 from app.utils.serializers import serialize_mongodb_document
 
@@ -39,13 +43,14 @@ router = APIRouter()
 CAPTURE_IMAGE_BUCKET = os.getenv("CAPTURE_IMAGE_BUCKET", "camera_images")
 CAPTURE_METADATA_COLLECTION = os.getenv("CAPTURE_METADATA_COLLECTION", "camera_captures")
 CAPTURE_IMAGE_MAX_BYTES = int(os.getenv("CAPTURE_IMAGE_MAX_BYTES", "2000000"))
-OCR_ENTRY_POLICY = os.getenv("OCR_ENTRY_POLICY", "optional").strip().lower()
-OCR_EXIT_POLICY = os.getenv("OCR_EXIT_POLICY", "required").strip().lower()
-ALLOW_ENTRY_ON_OCR_MISMATCH = os.getenv("ALLOW_ENTRY_ON_OCR_MISMATCH", "false").lower() == "true"
-ALLOW_EXIT_ON_OCR_FAILED = os.getenv("ALLOW_EXIT_ON_OCR_FAILED", "false").lower() == "true"
-ALLOW_EXIT_ON_OCR_MISMATCH = os.getenv("ALLOW_EXIT_ON_OCR_MISMATCH", "false").lower() == "true"
-ALLOW_EXIT_ON_OCR_FUZZY_MATCH = os.getenv("ALLOW_EXIT_ON_OCR_FUZZY_MATCH", "true").lower() == "true"
-OCR_FUZZY_MAX_DISTANCE = int(os.getenv("OCR_FUZZY_MAX_DISTANCE", "2"))
+OCR_ENTRY_POLICY = settings.OCR_ENTRY_POLICY.strip().lower()
+OCR_EXIT_POLICY = settings.OCR_EXIT_POLICY.strip().lower()
+STRICT_OCR_BEFORE_GATE = settings.STRICT_OCR_BEFORE_GATE
+ALLOW_ENTRY_ON_OCR_MISMATCH = settings.ALLOW_ENTRY_ON_OCR_MISMATCH
+ALLOW_EXIT_ON_OCR_FAILED = settings.ALLOW_EXIT_ON_OCR_FAILED
+ALLOW_EXIT_ON_OCR_MISMATCH = settings.ALLOW_EXIT_ON_OCR_MISMATCH
+ALLOW_EXIT_ON_OCR_FUZZY_MATCH = settings.ALLOW_EXIT_ON_OCR_FUZZY_MATCH
+OCR_FUZZY_MAX_DISTANCE = settings.OCR_FUZZY_MAX_DISTANCE
 ENABLE_DEV_ACCESS_TOOLS = os.getenv("ENABLE_DEV_ACCESS_TOOLS", "false").lower() == "true"
 
 NORMALIZED_PLATE_RE = re.compile(r"^\d{2}[A-Z]{1,2}\d{4,6}$")
@@ -128,6 +133,45 @@ def parse_frame_metadata(raw_value: str) -> List[Dict[str, Any]]:
     except json.JSONDecodeError:
         logger.warning("[ACCESS] Invalid frame_metadata JSON ignored")
         return []
+
+
+def parse_processing_metrics(raw_value: str) -> Dict[str, Any]:
+    if not raw_value:
+        return {}
+    try:
+        value = json.loads(raw_value)
+        return value if isinstance(value, dict) else {}
+    except json.JSONDecodeError:
+        logger.warning("[ACCESS] Invalid processing_metrics JSON ignored")
+        return {}
+
+
+def init_processing_metrics(worker_metrics: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "worker": worker_metrics,
+        "backend": {
+            "timestamps": {
+                "request_received_at": utcnow().isoformat(),
+            },
+            "durations": {},
+        },
+    }
+
+
+def backend_metric_section(metrics: Dict[str, Any]) -> Dict[str, Any]:
+    backend = metrics.setdefault("backend", {})
+    backend.setdefault("timestamps", {})
+    backend.setdefault("durations", {})
+    return backend
+
+
+def mark_backend_timestamp(metrics: Dict[str, Any], name: str) -> None:
+    backend_metric_section(metrics)["timestamps"][name] = utcnow().isoformat()
+
+
+def set_backend_duration(metrics: Dict[str, Any], name: str, started_at: float) -> None:
+    elapsed = int(round((time.perf_counter() - started_at) * 1000))
+    backend_metric_section(metrics)["durations"][name] = elapsed
 
 
 def frame_meta_at(metadata: Sequence[Dict[str, Any]], index: int) -> Dict[str, Any]:
@@ -428,8 +472,9 @@ def build_event_doc(
     image_ids: Sequence[str],
     gate_open_sent: bool,
     review_required: bool,
+    processing_metrics: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    return {
+    event_doc = {
         "event_id": event_id,
         "card_uid": card_uid,
         "gate_id": gate_id,
@@ -448,6 +493,9 @@ def build_event_doc(
         "review_required": review_required,
         "created_at": utcnow(),
     }
+    if processing_metrics:
+        event_doc["processing_metrics"] = processing_metrics
+    return event_doc
 
 
 async def reject_event(
@@ -464,7 +512,10 @@ async def reject_event(
     vehicle_id: Optional[str],
     image_ids: Sequence[str],
     action: Optional[str] = None,
+    processing_metrics: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    if processing_metrics:
+        mark_backend_timestamp(processing_metrics, "decision_finished_at")
     event_id = await generate_id(db, "parking_events", "E")
     event_doc = build_event_doc(
         event_id=event_id,
@@ -483,6 +534,7 @@ async def reject_event(
         image_ids=image_ids,
         gate_open_sent=False,
         review_required=True,
+        processing_metrics=processing_metrics,
     )
     await record_parking_event(db, event_doc)
     await link_captures_to_decision(
@@ -508,6 +560,145 @@ async def publish_open_gate() -> bool:
     return await asyncio.to_thread(gate_mqtt_publisher.publish_open)
 
 
+async def find_vehicle_by_normalized_plate(
+    db: AsyncIOMotorDatabase,
+    normalized_plate: str,
+) -> Optional[Dict[str, Any]]:
+    direct_match = await db.vehicles.find_one({"plate_number": normalized_plate})
+    if direct_match:
+        return direct_match
+
+    async for vehicle in db.vehicles.find({"plate_number": {"$exists": True}}):
+        if normalize_plate(str(vehicle.get("plate_number", ""))) == normalized_plate:
+            return vehicle
+    return None
+
+
+async def create_walk_in_binding(
+    *,
+    db: AsyncIOMotorDatabase,
+    card_uid: str,
+    normalized_plate: str,
+) -> Dict[str, Any]:
+    existing_vehicle = await find_vehicle_by_normalized_plate(db, normalized_plate)
+    if existing_vehicle:
+        return {
+            "success": False,
+            "reason": "walk_in_plate_already_registered",
+            "vehicle": existing_vehicle,
+        }
+
+    available_slot = await db.parking_slots.find_one({"status": SlotStatus.AVAILABLE.value})
+    if not available_slot:
+        return {
+            "success": False,
+            "reason": "parking_full",
+        }
+
+    dt = utcnow()
+    customer_id = await generate_id(db, "customers", "C")
+    vehicle_id = await generate_id(db, "vehicles", "V")
+
+    customer = {
+        "customer_id": customer_id,
+        "name": f"Khach vang lai {normalized_plate}",
+        "phone": None,
+        "email": None,
+        "address": None,
+        "id_card": None,
+        "customer_type": "walk_in",
+        "balance": 0.0,
+        "created_at": dt,
+        "updated_at": dt,
+        "is_active": True,
+        "notes": f"Auto-created from walk-in card {card_uid}",
+    }
+    vehicle = {
+        "vehicle_id": vehicle_id,
+        "customer_id": customer_id,
+        "plate_number": normalized_plate,
+        "vehicle_type": "motorbike",
+        "brand": None,
+        "model": None,
+        "color": None,
+        "created_at": dt,
+        "updated_at": dt,
+        "is_active": True,
+    }
+    card = {
+        "card_uid": card_uid,
+        "customer_id": customer_id,
+        "vehicle_id": vehicle_id,
+        "status": "active",
+        "issued_at": dt,
+        "expire_at": None,
+        "created_at": dt,
+        "notes": f"Walk-in card auto-created from OCR plate {normalized_plate}",
+    }
+
+    try:
+        await db.customers.insert_one(customer)
+        await db.vehicles.insert_one(vehicle)
+        await db.rfid_cards.insert_one(card)
+    except DuplicateKeyError as exc:
+        await rollback_walk_in_binding(
+            db=db,
+            card_uid=card_uid,
+            customer_id=customer_id,
+            vehicle_id=vehicle_id,
+        )
+        logger.warning("[ACCESS] Walk-in create conflict uid=%s plate=%s error=%s", card_uid, normalized_plate, exc)
+        return {
+            "success": False,
+            "reason": "walk_in_create_conflict",
+        }
+
+    logger.info(
+        "[ACCESS] Walk-in created uid=%s customer=%s vehicle=%s plate=%s",
+        card_uid,
+        customer_id,
+        vehicle_id,
+        normalized_plate,
+    )
+    return {
+        "success": True,
+        "customer": customer,
+        "vehicle": vehicle,
+        "card": card,
+    }
+
+
+async def rollback_walk_in_binding(
+    *,
+    db: AsyncIOMotorDatabase,
+    card_uid: str,
+    customer_id: str,
+    vehicle_id: str,
+) -> None:
+    await db.rfid_cards.delete_one(
+        {
+            "card_uid": card_uid,
+            "customer_id": customer_id,
+            "vehicle_id": vehicle_id,
+            "notes": {"$regex": "^Walk-in card auto-created"},
+        }
+    )
+    await db.vehicles.delete_one(
+        {
+            "vehicle_id": vehicle_id,
+            "customer_id": customer_id,
+            "is_active": True,
+        }
+    )
+    await db.customers.delete_one(
+        {
+            "customer_id": customer_id,
+            "customer_type": "walk_in",
+            "is_active": True,
+        }
+    )
+
+
 async def process_entry(
     *,
     db: AsyncIOMotorDatabase,
@@ -519,10 +710,12 @@ async def process_entry(
     ocr_confidence: float,
     image_ids: Sequence[str],
     review_required: bool,
+    processing_metrics: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     dt = utcnow()
     session_id = await generate_id(db, "sessions", "S")
 
+    slot_started_at = time.perf_counter()
     available_slot = await db.parking_slots.find_one_and_update(
         {"status": SlotStatus.AVAILABLE.value},
         {
@@ -536,6 +729,8 @@ async def process_entry(
         sort=[("row", 1), ("col", 1), ("slot_id", 1)],
         return_document=ReturnDocument.AFTER,
     )
+    if processing_metrics:
+        set_backend_duration(processing_metrics, "slot_reservation_ms", slot_started_at)
 
     if not available_slot:
         return await reject_event(
@@ -551,6 +746,7 @@ async def process_entry(
             vehicle_id=card.get("vehicle_id"),
             image_ids=image_ids,
             action="entry",
+            processing_metrics=processing_metrics,
         )
 
     session = {
@@ -574,7 +770,10 @@ async def process_entry(
         "review_required": review_required,
     }
     try:
+        session_insert_started_at = time.perf_counter()
         await db.sessions.insert_one(session)
+        if processing_metrics:
+            set_backend_duration(processing_metrics, "entry_session_insert_ms", session_insert_started_at)
     except Exception:
         logger.exception("[ACCESS] Failed to create entry session; releasing reserved slot")
         await db.parking_slots.update_one(
@@ -590,7 +789,13 @@ async def process_entry(
         )
         raise
 
+    if processing_metrics:
+        mark_backend_timestamp(processing_metrics, "gate_publish_started_at")
+    gate_publish_started_at = time.perf_counter()
     gate_open_sent = await publish_open_gate()
+    if processing_metrics:
+        set_backend_duration(processing_metrics, "gate_publish_ms", gate_publish_started_at)
+        mark_backend_timestamp(processing_metrics, "gate_publish_finished_at")
     event_id = await generate_id(db, "parking_events", "E")
     if not gate_open_sent:
         logger.error(
@@ -611,6 +816,8 @@ async def process_entry(
             },
         )
 
+        if processing_metrics:
+            mark_backend_timestamp(processing_metrics, "decision_finished_at")
         event_doc = build_event_doc(
             event_id=event_id,
             card_uid=card["card_uid"],
@@ -628,6 +835,7 @@ async def process_entry(
             image_ids=image_ids,
             gate_open_sent=False,
             review_required=True,
+            processing_metrics=processing_metrics,
         )
         event_doc["rolled_back"] = True
         event_doc["slot_id"] = available_slot["slot_id"]
@@ -641,6 +849,7 @@ async def process_entry(
             decision="rejected",
             reason="gate_publish_failed",
         )
+        await publish_parking_status_update(db)
         return {
             "success": False,
             "decision": "rejected",
@@ -653,6 +862,8 @@ async def process_entry(
             "event": serialize_mongodb_document(event_doc),
         }
 
+    if processing_metrics:
+        mark_backend_timestamp(processing_metrics, "decision_finished_at")
     event_doc = build_event_doc(
         event_id=event_id,
         card_uid=card["card_uid"],
@@ -670,6 +881,7 @@ async def process_entry(
         image_ids=image_ids,
         gate_open_sent=True,
         review_required=review_required,
+        processing_metrics=processing_metrics,
     )
     await record_parking_event(db, event_doc)
     await link_captures_to_decision(
@@ -681,6 +893,7 @@ async def process_entry(
         decision="accepted",
         reason=event_doc["reason"],
     )
+    await publish_parking_status_update(db)
 
     return {
         "success": True,
@@ -707,9 +920,11 @@ async def process_exit(
     image_ids: Sequence[str],
     review_required: bool,
     review_reason: Optional[str],
+    processing_metrics: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     dt = utcnow()
     entry_time = active_session["entry_time"]
+    package_lookup_started_at = time.perf_counter()
     active_package = await db.packages.find_one(
         {
             "customer_id": card["customer_id"],
@@ -717,11 +932,21 @@ async def process_exit(
             "expire_date": {"$gt": dt},
         }
     )
+    if processing_metrics:
+        set_backend_duration(processing_metrics, "package_lookup_ms", package_lookup_started_at)
     parking_fee = 0.0 if active_package else FeeCalculator.calculate_parking_fee(entry_time, dt)
 
+    if processing_metrics:
+        mark_backend_timestamp(processing_metrics, "gate_publish_started_at")
+    gate_publish_started_at = time.perf_counter()
     gate_open_sent = await publish_open_gate()
+    if processing_metrics:
+        set_backend_duration(processing_metrics, "gate_publish_ms", gate_publish_started_at)
+        mark_backend_timestamp(processing_metrics, "gate_publish_finished_at")
     event_id = await generate_id(db, "parking_events", "E")
     if not gate_open_sent:
+        if processing_metrics:
+            mark_backend_timestamp(processing_metrics, "decision_finished_at")
         event_doc = build_event_doc(
             event_id=event_id,
             card_uid=card["card_uid"],
@@ -739,6 +964,7 @@ async def process_exit(
             image_ids=image_ids,
             gate_open_sent=False,
             review_required=True,
+            processing_metrics=processing_metrics,
         )
         event_doc["parking_fee"] = parking_fee
         event_doc["review_reason"] = review_reason or "gate_publish_failed"
@@ -763,6 +989,7 @@ async def process_exit(
             "event": serialize_mongodb_document(event_doc),
         }
 
+    session_update_started_at = time.perf_counter()
     await db.sessions.update_one(
         {"session_id": active_session["session_id"]},
         {
@@ -780,8 +1007,11 @@ async def process_exit(
             }
         },
     )
+    if processing_metrics:
+        set_backend_duration(processing_metrics, "exit_session_update_ms", session_update_started_at)
 
     if active_session.get("slot_id"):
+        slot_release_started_at = time.perf_counter()
         await db.parking_slots.update_one(
             {"slot_id": active_session["slot_id"]},
             {
@@ -793,10 +1023,13 @@ async def process_exit(
                 }
             },
         )
+        if processing_metrics:
+            set_backend_duration(processing_metrics, "slot_release_ms", slot_release_started_at)
 
     transaction_id = None
     if parking_fee > 0:
         transaction_id = await generate_id(db, "transactions", "T")
+        transaction_insert_started_at = time.perf_counter()
         await db.transactions.insert_one(
             {
                 "transaction_id": transaction_id,
@@ -809,7 +1042,11 @@ async def process_exit(
                 "created_at": dt,
             }
         )
+        if processing_metrics:
+            set_backend_duration(processing_metrics, "transaction_insert_ms", transaction_insert_started_at)
 
+    if processing_metrics:
+        mark_backend_timestamp(processing_metrics, "decision_finished_at")
     event_doc = build_event_doc(
         event_id=event_id,
         card_uid=card["card_uid"],
@@ -827,6 +1064,7 @@ async def process_exit(
         image_ids=image_ids,
         gate_open_sent=True,
         review_required=review_required,
+        processing_metrics=processing_metrics,
     )
     event_doc["parking_fee"] = parking_fee
     event_doc["transaction_id"] = transaction_id
@@ -841,6 +1079,7 @@ async def process_exit(
         decision="accepted",
         reason=event_doc["reason"],
     )
+    await publish_parking_status_update(db)
 
     return {
         "success": True,
@@ -865,8 +1104,11 @@ async def handle_rfid_camera_event(
     ocr_plate: str = Form(""),
     ocr_confidence: float = Form(0.0),
     frame_metadata: str = Form("[]"),
+    processing_metrics: str = Form("{}"),
     db: AsyncIOMotorDatabase = Depends(get_database),
 ):
+    request_started_at = time.perf_counter()
+    processing_metrics_doc = init_processing_metrics(parse_processing_metrics(processing_metrics))
     card_uid = card_uid.strip()
     if not card_uid:
         raise HTTPException(status_code=400, detail="card_uid is required")
@@ -876,6 +1118,7 @@ async def handle_rfid_camera_event(
         raise HTTPException(status_code=400, detail="capture_batch_id is required")
 
     gate_direction = normalize_gate_direction(gate_direction)
+    set_backend_duration(processing_metrics_doc, "request_validation_ms", request_started_at)
 
     existing_event = await db.parking_events.find_one({"capture_batch_id": capture_batch_id})
     if existing_event:
@@ -892,8 +1135,11 @@ async def handle_rfid_camera_event(
         }
 
     normalized_ocr_plate = normalize_plate(ocr_plate)
+    ocr_valid = is_valid_plate(normalized_ocr_plate)
     parsed_frame_metadata = parse_frame_metadata(frame_metadata)
+    multipart_parse_started_at = time.perf_counter()
     multipart_form = await request.form()
+    set_backend_duration(processing_metrics_doc, "multipart_parse_ms", multipart_parse_started_at)
     uploaded_images = normalize_uploaded_images(multipart_form.getlist("images"))
     logger.info(
         "[ACCESS] RFID camera event batch=%s uid=%s images=%s",
@@ -902,6 +1148,8 @@ async def handle_rfid_camera_event(
         len(uploaded_images),
     )
 
+    image_store_started_at = time.perf_counter()
+    mark_backend_timestamp(processing_metrics_doc, "image_store_started_at")
     stored_images = await store_uploaded_images(
         db=db,
         card_uid=card_uid,
@@ -912,10 +1160,44 @@ async def handle_rfid_camera_event(
         frame_metadata=parsed_frame_metadata,
         images=uploaded_images,
     )
+    set_backend_duration(processing_metrics_doc, "image_store_ms", image_store_started_at)
+    mark_backend_timestamp(processing_metrics_doc, "image_store_finished_at")
     image_ids = [str(item["gridfs_file_id"]) for item in stored_images]
 
-    card = await db.rfid_cards.find_one({"card_uid": card_uid, "status": "active"})
-    if not card:
+    lookup_started_at = time.perf_counter()
+    mark_backend_timestamp(processing_metrics_doc, "db_lookup_started_at")
+    if REGISTRATION_MODE["enabled"]:
+        await db.pending_scans.insert_one(
+            {
+                "card_uid": card_uid,
+                "gate_id": gate_id,
+                "distance_cm": None,
+                "scanned_at": utcnow(),
+                "source": "rfid_camera",
+            }
+        )
+        set_backend_duration(processing_metrics_doc, "db_lookup_ms", lookup_started_at)
+        mark_backend_timestamp(processing_metrics_doc, "db_lookup_finished_at")
+        return await reject_event(
+            db=db,
+            card_uid=card_uid,
+            gate_id=gate_id,
+            capture_batch_id=capture_batch_id,
+            reason="registration_mode_active",
+            ocr_plate=normalized_ocr_plate,
+            ocr_confidence=ocr_confidence,
+            expected_plate=None,
+            customer_id=None,
+            vehicle_id=None,
+            image_ids=image_ids,
+            action=None,
+            processing_metrics=processing_metrics_doc,
+        )
+
+    card = await db.rfid_cards.find_one({"card_uid": card_uid})
+    if card and card.get("status") != "active":
+        set_backend_duration(processing_metrics_doc, "db_lookup_ms", lookup_started_at)
+        mark_backend_timestamp(processing_metrics_doc, "db_lookup_finished_at")
         return await reject_event(
             db=db,
             card_uid=card_uid,
@@ -925,13 +1207,86 @@ async def handle_rfid_camera_event(
             ocr_plate=normalized_ocr_plate,
             ocr_confidence=ocr_confidence,
             expected_plate=None,
-            customer_id=None,
-            vehicle_id=None,
+            customer_id=card.get("customer_id"),
+            vehicle_id=card.get("vehicle_id"),
             image_ids=image_ids,
+            processing_metrics=processing_metrics_doc,
         )
 
-    vehicle = await db.vehicles.find_one({"vehicle_id": card.get("vehicle_id"), "is_active": True})
+    walk_in_created = False
+    if not card:
+        if gate_direction == "exit":
+            set_backend_duration(processing_metrics_doc, "db_lookup_ms", lookup_started_at)
+            mark_backend_timestamp(processing_metrics_doc, "db_lookup_finished_at")
+            return await reject_event(
+                db=db,
+                card_uid=card_uid,
+                gate_id=gate_id,
+                capture_batch_id=capture_batch_id,
+                reason="walk_in_exit_card_not_registered",
+                ocr_plate=normalized_ocr_plate,
+                ocr_confidence=ocr_confidence,
+                expected_plate=None,
+                customer_id=None,
+                vehicle_id=None,
+                image_ids=image_ids,
+                action="exit",
+                processing_metrics=processing_metrics_doc,
+            )
+
+        if not ocr_valid:
+            set_backend_duration(processing_metrics_doc, "db_lookup_ms", lookup_started_at)
+            mark_backend_timestamp(processing_metrics_doc, "db_lookup_finished_at")
+            return await reject_event(
+                db=db,
+                card_uid=card_uid,
+                gate_id=gate_id,
+                capture_batch_id=capture_batch_id,
+                reason="walk_in_ocr_failed",
+                ocr_plate=normalized_ocr_plate,
+                ocr_confidence=ocr_confidence,
+                expected_plate=None,
+                customer_id=None,
+                vehicle_id=None,
+                image_ids=image_ids,
+                action="entry",
+                processing_metrics=processing_metrics_doc,
+            )
+
+        walk_in = await create_walk_in_binding(
+            db=db,
+            card_uid=card_uid,
+            normalized_plate=normalized_ocr_plate,
+        )
+        if not walk_in.get("success"):
+            existing_vehicle = walk_in.get("vehicle") or {}
+            set_backend_duration(processing_metrics_doc, "db_lookup_ms", lookup_started_at)
+            mark_backend_timestamp(processing_metrics_doc, "db_lookup_finished_at")
+            return await reject_event(
+                db=db,
+                card_uid=card_uid,
+                gate_id=gate_id,
+                capture_batch_id=capture_batch_id,
+                reason=str(walk_in.get("reason") or "walk_in_create_failed"),
+                ocr_plate=normalized_ocr_plate,
+                ocr_confidence=ocr_confidence,
+                expected_plate=normalize_plate(str(existing_vehicle.get("plate_number", ""))) or None,
+                customer_id=existing_vehicle.get("customer_id"),
+                vehicle_id=existing_vehicle.get("vehicle_id"),
+                image_ids=image_ids,
+                action="entry",
+                processing_metrics=processing_metrics_doc,
+            )
+
+        card = walk_in["card"]
+        vehicle = walk_in["vehicle"]
+        walk_in_created = True
+    else:
+        vehicle = await db.vehicles.find_one({"vehicle_id": card.get("vehicle_id"), "is_active": True})
+
     if not vehicle:
+        set_backend_duration(processing_metrics_doc, "db_lookup_ms", lookup_started_at)
+        mark_backend_timestamp(processing_metrics_doc, "db_lookup_finished_at")
         return await reject_event(
             db=db,
             card_uid=card_uid,
@@ -944,13 +1299,16 @@ async def handle_rfid_camera_event(
             customer_id=card.get("customer_id"),
             vehicle_id=card.get("vehicle_id"),
             image_ids=image_ids,
+            processing_metrics=processing_metrics_doc,
         )
 
     expected_plate = normalize_plate(str(vehicle.get("plate_number", "")))
-    ocr_valid = is_valid_plate(normalized_ocr_plate)
     active_session = await db.sessions.find_one(
         {"card_uid": card_uid, "status": SessionStatus.IN_PROGRESS.value}
     )
+    set_backend_duration(processing_metrics_doc, "db_lookup_ms", lookup_started_at)
+    mark_backend_timestamp(processing_metrics_doc, "db_lookup_finished_at")
+    mark_backend_timestamp(processing_metrics_doc, "decision_started_at")
 
     if gate_direction == "entry":
         action = "entry"
@@ -968,6 +1326,7 @@ async def handle_rfid_camera_event(
                 vehicle_id=card.get("vehicle_id"),
                 image_ids=image_ids,
                 action=action,
+                processing_metrics=processing_metrics_doc,
             )
     elif gate_direction == "exit":
         action = "exit"
@@ -985,6 +1344,7 @@ async def handle_rfid_camera_event(
                 vehicle_id=card.get("vehicle_id"),
                 image_ids=image_ids,
                 action=action,
+                processing_metrics=processing_metrics_doc,
             )
     else:
         action = "exit" if active_session else "entry"
@@ -992,7 +1352,7 @@ async def handle_rfid_camera_event(
     if action == "entry":
         review_required = False
         if not ocr_valid:
-            if OCR_ENTRY_POLICY == "required":
+            if STRICT_OCR_BEFORE_GATE or OCR_ENTRY_POLICY == "required":
                 return await reject_event(
                     db=db,
                     card_uid=card_uid,
@@ -1006,6 +1366,7 @@ async def handle_rfid_camera_event(
                     vehicle_id=card.get("vehicle_id"),
                     image_ids=image_ids,
                     action=action,
+                    processing_metrics=processing_metrics_doc,
                 )
             review_required = True
         elif normalized_ocr_plate != expected_plate:
@@ -1023,10 +1384,11 @@ async def handle_rfid_camera_event(
                     vehicle_id=card.get("vehicle_id"),
                     image_ids=image_ids,
                     action=action,
+                    processing_metrics=processing_metrics_doc,
                 )
             review_required = True
 
-        return await process_entry(
+        entry_result = await process_entry(
             db=db,
             card=card,
             vehicle=vehicle,
@@ -1036,13 +1398,30 @@ async def handle_rfid_camera_event(
             ocr_confidence=ocr_confidence,
             image_ids=image_ids,
             review_required=review_required,
+            processing_metrics=processing_metrics_doc,
         )
+        if walk_in_created:
+            if entry_result.get("decision") == "accepted":
+                entry_result["walk_in_created"] = True
+                entry_result["customer_type"] = "walk_in"
+                entry_result["customer_id"] = card.get("customer_id")
+                entry_result["vehicle_id"] = card.get("vehicle_id")
+            else:
+                await rollback_walk_in_binding(
+                    db=db,
+                    card_uid=card["card_uid"],
+                    customer_id=card["customer_id"],
+                    vehicle_id=card["vehicle_id"],
+                )
+                entry_result["walk_in_created"] = False
+                entry_result["walk_in_rolled_back"] = True
+        return entry_result
 
     exit_review_required = False
     exit_review_reason = None
 
     if not ocr_valid:
-        if OCR_EXIT_POLICY == "required" and not ALLOW_EXIT_ON_OCR_FAILED:
+        if STRICT_OCR_BEFORE_GATE or (OCR_EXIT_POLICY == "required" and not ALLOW_EXIT_ON_OCR_FAILED):
             return await reject_event(
                 db=db,
                 card_uid=card_uid,
@@ -1056,6 +1435,7 @@ async def handle_rfid_camera_event(
                 vehicle_id=card.get("vehicle_id"),
                 image_ids=image_ids,
                 action=action,
+                processing_metrics=processing_metrics_doc,
             )
         exit_review_required = True
         exit_review_reason = "exit_ocr_failed_allowed"
@@ -1077,6 +1457,7 @@ async def handle_rfid_camera_event(
                 vehicle_id=card.get("vehicle_id"),
                 image_ids=image_ids,
                 action=action,
+                processing_metrics=processing_metrics_doc,
             )
         else:
             exit_review_required = True
@@ -1094,6 +1475,7 @@ async def handle_rfid_camera_event(
         image_ids=image_ids,
         review_required=exit_review_required,
         review_reason=exit_review_reason,
+        processing_metrics=processing_metrics_doc,
     )
 
 
@@ -1273,6 +1655,7 @@ async def dev_reset_active_session(
                 }
             },
         )
+    await publish_parking_status_update(db)
 
     return {
         "success": True,
@@ -1349,6 +1732,8 @@ async def dev_cleanup_active_sessions(
                 "slot_id": slot_id,
             }
         )
+
+    await publish_parking_status_update(db)
 
     return {
         "success": True,

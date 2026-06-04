@@ -96,20 +96,7 @@
                                     <select class="form-select" id="vehicleType" required>
                                         <option value="motorbike">Xe máy</option>
                                         <option value="car">Ô tô</option>
-                                        <option value="bicycle">Xe đạp</option>
                                     </select>
-                                </div>
-                                <div class="col-md-4">
-                                    <label class="form-label">Hãng xe</label>
-                                    <input type="text" class="form-control" id="vehicleBrand">
-                                </div>
-                                <div class="col-md-4">
-                                    <label class="form-label">Dòng xe</label>
-                                    <input type="text" class="form-control" id="vehicleModel">
-                                </div>
-                                <div class="col-md-4">
-                                    <label class="form-label">Màu xe</label>
-                                    <input type="text" class="form-control" id="vehicleColor">
                                 </div>
                             </div>
 
@@ -239,6 +226,9 @@
                     if (result && result.success && result.card_uid) {
                         document.getElementById('cardUid').value = result.card_uid;
                         showToast('✅ Đã quét thẻ: ' + result.card_uid, 'success');
+                        if (result.already_registered) {
+                            showToast('The RFID card is already registered: ' + result.card_uid, 'warning');
+                        }
                         stopAutoFetch();
                     } else if (result && result.success === false && result.message) {
                         console.log('Chưa có thẻ mới trong hàng chờ đăng ký');
@@ -337,9 +327,9 @@
                     customer_id: customerId,
                     plate_number: document.getElementById('vehiclePlate').value.trim(),
                     vehicle_type: document.getElementById('vehicleType').value,
-                    brand: document.getElementById('vehicleBrand').value.trim() || null,
-                    model: document.getElementById('vehicleModel').value.trim() || null,
-                    color: document.getElementById('vehicleColor').value.trim() || null
+                    brand: null,
+                    model: null,
+                    color: null
                 };
                 
                 console.log('Creating vehicle:', vehicleData);

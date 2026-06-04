@@ -8,6 +8,7 @@ from datetime import datetime
 
 from app.database import get_database
 from app.config import settings
+from app.services.parking_status import publish_parking_status_update
 from app.utils.serializers import serialize_mongodb_document, serialize_list
 
 router = APIRouter()
@@ -142,6 +143,7 @@ async def initialize_slots(db: AsyncIOMotorDatabase = Depends(get_database)):
             })
 
     await db.parking_slots.insert_many(slots)
+    await publish_parking_status_update(db)
 
     return {
         "success": True,
