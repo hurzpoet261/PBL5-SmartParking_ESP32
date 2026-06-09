@@ -4,6 +4,7 @@ Session Controller
 from fastapi import APIRouter, Depends, Query
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from typing import Optional
+import re
 
 from app.database import get_database
 
@@ -48,39 +49,81 @@ async def get_sessions(
             }
         except:
             pass
+
+    if plate_number:
+        plate_regex = {"$regex": re.escape(plate_number), "$options": "i"}
+        vehicles_for_plate = await db.vehicles.find(
+            {"plate_number": plate_regex},
+            {"vehicle_id": 1},
+        ).to_list(length=1000)
+        vehicle_ids_for_plate = [vehicle.get("vehicle_id") for vehicle in vehicles_for_plate if vehicle.get("vehicle_id")]
+        plate_filters = [
+            {"plate_number_snapshot": plate_regex},
+            {"entry_plate_ocr": plate_regex},
+            {"exit_plate_ocr": plate_regex},
+        ]
+        if vehicle_ids_for_plate:
+            plate_filters.append({"vehicle_id": {"$in": vehicle_ids_for_plate}})
+        query["$or"] = plate_filters
     
     total = await db.sessions.count_documents(query)
     sessions = await db.sessions.find(query).sort("entry_time", -1).skip(skip).limit(limit).to_list(length=limit)
+
+    customer_ids = sorted({session.get("customer_id") for session in sessions if session.get("customer_id")})
+    vehicle_ids = sorted({session.get("vehicle_id") for session in sessions if session.get("vehicle_id")})
+    slot_ids = sorted({session.get("slot_id") for session in sessions if session.get("slot_id")})
+
+    customers = (
+        await db.customers.find({"customer_id": {"$in": customer_ids}}).to_list(length=len(customer_ids))
+        if customer_ids
+        else []
+    )
+    vehicles = (
+        await db.vehicles.find({"vehicle_id": {"$in": vehicle_ids}}).to_list(length=len(vehicle_ids))
+        if vehicle_ids
+        else []
+    )
+    slots = (
+        await db.parking_slots.find({"slot_id": {"$in": slot_ids}}).to_list(length=len(slot_ids))
+        if slot_ids
+        else []
+    )
+    customers_by_id = {customer.get("customer_id"): customer for customer in customers}
+    vehicles_by_id = {vehicle.get("vehicle_id"): vehicle for vehicle in vehicles}
+    slots_by_id = {slot.get("slot_id"): slot for slot in slots}
     
     # Enrich with customer and vehicle info
     enriched_sessions = []
     for session in sessions:
         fix_id(session)
         
-        customer = await db.customers.find_one({"customer_id": session.get("customer_id")})
-        fix_id(customer)
-
-        vehicle = await db.vehicles.find_one({"vehicle_id": session.get("vehicle_id")})
-        fix_id(vehicle)
-
-        slot = await db.parking_slots.find_one({"slot_id": session.get("slot_id")})
-        fix_id(slot)
+        customer = customers_by_id.get(session.get("customer_id"))
+        vehicle = vehicles_by_id.get(session.get("vehicle_id"))
+        slot = slots_by_id.get(session.get("slot_id"))
+        customer_name = (
+            customer.get("name")
+            if customer
+            else session.get("customer_name_snapshot") or "N/A"
+        )
+        plate_number = (
+            vehicle.get("plate_number")
+            if vehicle
+            else session.get("plate_number_snapshot")
+            or session.get("exit_plate_ocr")
+            or session.get("entry_plate_ocr")
+            or "N/A"
+        )
         
         enriched_session = {
             **session,
-            "customer_name": customer.get("name") if customer else "N/A",
-            "plate_number": vehicle.get("plate_number") if vehicle else "N/A",
+            "customer_name": customer_name,
+            "plate_number": plate_number,
             "slot_number": slot.get("slot_number") if slot else session.get("slot_id", "N/A"),
             "check_in_time": session.get("entry_time"),  # Alias for compatibility
             "check_out_time": session.get("exit_time"),
             "fee": session.get("parking_fee", 0)
         }
         enriched_sessions.append(enriched_session)
-    
-    # Filter by plate_number if provided (after enrichment)
-    if plate_number:
-        enriched_sessions = [s for s in enriched_sessions if plate_number.lower() in s.get("plate_number", "").lower()]
-        total = len(enriched_sessions)
     
     return {
         "success": True,

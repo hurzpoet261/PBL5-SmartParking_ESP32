@@ -31,6 +31,8 @@ import numpy as np
 import paho.mqtt.client as mqtt
 import requests
 
+from app.utils.timezone import now_local
+
 # PaddlePaddle on Windows can fail inside OneDNN/MKLDNN fused_conv2d for
 # PaddleOCR inference. Disable it before paddle/paddleocr is imported.
 os.environ.setdefault("FLAGS_use_mkldnn", "0")
@@ -94,14 +96,22 @@ TOPIC_GATE = (
     or "pbl5/smartparking/gate"
 )
 
-ESP32_CAM_URL = os.getenv("ESP32_CAM_URL", "http://10.129.42.178/capture")
+ESP32_CAM_URL = os.getenv("ESP32_CAM_URL") or "http://192.168.1.208/capture"
 ESP32_CAM_CONNECT_TIMEOUT = _env_float("ESP32_CAM_CONNECT_TIMEOUT", 1.0)
-ESP32_CAM_READ_TIMEOUT = _env_float("ESP32_CAM_READ_TIMEOUT", 4.0)
-BURST_COUNT = _env_int("BURST_COUNT", 3)
-BURST_INTERVAL_SEC = _env_float("BURST_INTERVAL_SEC", 0.2)
-VEHICLE_CENTER_DELAY_SEC = _env_float("VEHICLE_CENTER_DELAY_SEC", 0.5)
+ESP32_CAM_READ_TIMEOUT = _env_float("ESP32_CAM_READ_TIMEOUT", 3.5)
+BURST_COUNT = _env_int("BURST_COUNT", 2)
+BURST_INTERVAL_SEC = _env_float("BURST_INTERVAL_SEC", 0.1)
+VEHICLE_CENTER_DELAY_SEC = _env_float("VEHICLE_CENTER_DELAY_SEC", 0.2)
+CAMERA_BRIDGE_SLA_SEC = _env_float("CAMERA_BRIDGE_SLA_SEC", 10.0)
+BACKEND_SLA_RESERVE_SEC = _env_float("BACKEND_SLA_RESERVE_SEC", 1.0)
+ADAPTIVE_THIRD_FRAME = _env_bool("ADAPTIVE_THIRD_FRAME", False)
+ADAPTIVE_MAX_BURST_COUNT = _env_int("ADAPTIVE_MAX_BURST_COUNT", 2)
+ADAPTIVE_MIN_BRIGHTNESS = _env_float("ADAPTIVE_MIN_BRIGHTNESS", 55.0)
+ADAPTIVE_MAX_BRIGHTNESS = _env_float("ADAPTIVE_MAX_BRIGHTNESS", 220.0)
+ADAPTIVE_MAX_GLARE_RATIO = _env_float("ADAPTIVE_MAX_GLARE_RATIO", 0.08)
+UPLOAD_SELECTED_FRAMES_ONLY = _env_bool("UPLOAD_SELECTED_FRAMES_ONLY", True)
 
-BACKEND_API_BASE_URL = os.getenv("BACKEND_API_BASE_URL", "http://localhost:8000/api/v1").rstrip("/")
+BACKEND_API_BASE_URL = os.getenv("BACKEND_API_BASE_URL", "http://127.0.0.1:8000/api/v1").rstrip("/")
 BACKEND_ACCESS_EVENT_URL = os.getenv(
     "BACKEND_ACCESS_EVENT_URL",
     f"{BACKEND_API_BASE_URL}/access-events/rfid-camera",
@@ -141,23 +151,35 @@ PLATE_DETECTOR_REQUIRED = _env_bool("PLATE_DETECTOR_REQUIRED", False)
 PLATE_DETECTOR_FALLBACK_FULL_IMAGE = _env_bool("PLATE_DETECTOR_FALLBACK_FULL_IMAGE", True)
 MAX_PLATE_DETECTIONS_PER_IMAGE = _env_int("MAX_PLATE_DETECTIONS_PER_IMAGE", 2)
 PLATE_CROP_PADDING_RATIO = _env_float("PLATE_CROP_PADDING_RATIO", 0.08)
+PLATE_DETECTOR_ROI_ENABLED = _env_bool("PLATE_DETECTOR_ROI_ENABLED", False)
+PLATE_DETECTOR_ROI_X1 = _env_float("PLATE_DETECTOR_ROI_X1", 0.28)
+PLATE_DETECTOR_ROI_Y1 = _env_float("PLATE_DETECTOR_ROI_Y1", 0.24)
+PLATE_DETECTOR_ROI_X2 = _env_float("PLATE_DETECTOR_ROI_X2", 0.72)
+PLATE_DETECTOR_ROI_Y2 = _env_float("PLATE_DETECTOR_ROI_Y2", 0.52)
 
 PADDLEOCR_LANG = os.getenv("PADDLEOCR_LANG", "en")
 PADDLEOCR_USE_GPU = _env_bool("PADDLEOCR_USE_GPU", False)
 PADDLEOCR_USE_ANGLE_CLS = _env_bool("PADDLEOCR_USE_ANGLE_CLS", False)
-OCR_TIMEOUT_SEC = _env_float("OCR_TIMEOUT_SEC", 10.0)
+OCR_TIMEOUT_SEC = _env_float("OCR_TIMEOUT_SEC", 3.5)
 OCR_ACCEPT_CONFIDENCE = _env_float("OCR_ACCEPT_CONFIDENCE", 0.45)
 OCR_MIN_RETURN_CONFIDENCE = _env_float("OCR_MIN_RETURN_CONFIDENCE", 0.15)
-OCR_MAX_IMAGES = _env_int("OCR_MAX_IMAGES", 3)
+OCR_MAX_IMAGES = _env_int("OCR_MAX_IMAGES", 2)
 OCR_UPSCALE = _env_float("OCR_UPSCALE", 2.5)
 OCR_MIN_WIDTH = _env_int("OCR_MIN_WIDTH", 300)
+OCR_FAST_VARIANTS = _env_bool("OCR_FAST_VARIANTS", True)
+OCR_MAX_VARIANTS_PER_CROP = _env_int("OCR_MAX_VARIANTS_PER_CROP", 3)
 OCR_SAVE_DEBUG_CROPS = _env_bool("OCR_SAVE_DEBUG_CROPS", False)
 OCR_DEBUG_DIR = Path(os.getenv("OCR_DEBUG_DIR", str(BACKEND_DIR / "captured_images" / "_ocr_debug")))
 
 MAX_PROCESS_IMAGE_WIDTH = _env_int("MAX_PROCESS_IMAGE_WIDTH", 1200)
 MIN_BLUR_SCORE = _env_float("MIN_BLUR_SCORE", 40.0)
+OCR_FAST_MIN_CONTRAST = _env_float("OCR_FAST_MIN_CONTRAST", 32.0)
+OCR_FAST_MIN_BRIGHTNESS = _env_float("OCR_FAST_MIN_BRIGHTNESS", 70.0)
+OCR_FAST_MAX_BRIGHTNESS = _env_float("OCR_FAST_MAX_BRIGHTNESS", 210.0)
+OCR_FAST_MAX_GLARE_RATIO = _env_float("OCR_FAST_MAX_GLARE_RATIO", 0.04)
 CLAHE_CLIP_LIMIT = _env_float("OCR_CLAHE_CLIP_LIMIT", 2.0)
 CLAHE_TILE_SIZE = _env_int("OCR_CLAHE_TILE_SIZE", 8)
+REGISTRATION_MODE_CHECK_TIMEOUT = _env_float("REGISTRATION_MODE_CHECK_TIMEOUT", 0.6)
 
 
 # ==============================================================================
@@ -232,6 +254,7 @@ class CapturedFrame:
     byte_size: int
     width: int
     height: int
+    capture_ms: int = 0
     blur_score: float = 0.0
     brightness: float = 0.0
     contrast: float = 0.0
@@ -240,6 +263,7 @@ class CapturedFrame:
     detections: List[PlateDetection] = field(default_factory=list)
     selected_detection: Optional[PlateDetection] = None
     quality_score: float = 0.0
+    analyzed: bool = False
 
 
 @dataclass
@@ -264,8 +288,13 @@ class ProcessingMetrics:
     backend_post_started_at: float = 0.0
     backend_post_finished_at: float = 0.0
     worker_finished_at: float = 0.0
+    sla_deadline_at: float = 0.0
+    sla_exceeded: bool = False
     captured_frame_count: int = 0
     selected_ocr_frame_count: int = 0
+    selected_upload_count: int = 0
+    ocr_variant_count: int = 0
+    frame_capture_each_ms: List[int] = field(default_factory=list)
     ocr_plate_found: bool = False
     backend_decision: Optional[str] = None
     backend_action: Optional[str] = None
@@ -291,6 +320,24 @@ _mqtt_client: Optional[mqtt.Client] = None
 _processing_uids: set[str] = set()
 _last_uid_at: Dict[str, float] = {}
 _queue_lock = threading.Lock()
+
+
+def plate_detector_roi_bounds(width: int, height: int) -> Tuple[int, int, int, int]:
+    if not PLATE_DETECTOR_ROI_ENABLED:
+        return 0, 0, width, height
+
+    x1_ratio = max(0.0, min(PLATE_DETECTOR_ROI_X1, 0.98))
+    y1_ratio = max(0.0, min(PLATE_DETECTOR_ROI_Y1, 0.98))
+    x2_ratio = max(0.02, min(PLATE_DETECTOR_ROI_X2, 1.0))
+    y2_ratio = max(0.02, min(PLATE_DETECTOR_ROI_Y2, 1.0))
+
+    x1 = int(x1_ratio * width)
+    y1 = int(y1_ratio * height)
+    x2 = int(x2_ratio * width)
+    y2 = int(y2_ratio * height)
+    if x2 <= x1 or y2 <= y1:
+        return 0, 0, width, height
+    return x1, y1, x2, y2
 
 
 # ==============================================================================
@@ -375,11 +422,14 @@ class PlateOcrRuntime:
     def detect_plates(self, image: np.ndarray) -> List[PlateDetection]:
         detections: List[PlateDetection] = []
         height, width = image.shape[:2]
+        roi_x1, roi_y1, roi_x2, roi_y2 = plate_detector_roi_bounds(width, height)
+        detector_image = image[roi_y1:roi_y2, roi_x1:roi_x2]
+        detector_source = "yolo_roi" if (roi_x1, roi_y1, roi_x2, roi_y2) != (0, 0, width, height) else "yolo"
 
         if self.detector is not None:
             try:
                 results = self.detector.predict(
-                    source=image,
+                    source=detector_image,
                     conf=PLATE_DETECTOR_CONF,
                     imgsz=PLATE_DETECTOR_IMGSZ,
                     verbose=False,
@@ -395,7 +445,14 @@ class PlateOcrRuntime:
                         conf = float(box.conf[0]) if box.conf is not None else 0.0
                         detections.append(
                             clamp_detection(
-                                PlateDetection(x1, y1, x2, y2, conf, "yolo"),
+                                PlateDetection(
+                                    x1 + roi_x1,
+                                    y1 + roi_y1,
+                                    x2 + roi_x1,
+                                    y2 + roi_y1,
+                                    conf,
+                                    detector_source,
+                                ),
                                 width,
                                 height,
                             )
@@ -579,7 +636,8 @@ def flatten_paddle_result(result: Any) -> List[Tuple[str, float]]:
 
 
 def utcnow() -> datetime:
-    return datetime.utcnow()
+    # Kept as a compatibility wrapper for existing call sites.
+    return now_local()
 
 
 def monotonic_to_utc_iso(monotonic_value: float, reference_monotonic: float, reference_utc: datetime) -> Optional[str]:
@@ -593,6 +651,50 @@ def elapsed_ms(start: float, end: float) -> Optional[int]:
     if start <= 0 or end <= 0:
         return None
     return int(round((end - start) * 1000))
+
+
+def time_remaining(deadline: Optional[float]) -> float:
+    if not deadline:
+        return float("inf")
+    return max(0.0, deadline - time.monotonic())
+
+
+def sla_deadline_for_event(event: RFIDEvent) -> float:
+    if CAMERA_BRIDGE_SLA_SEC <= 0:
+        return 0.0
+    return event.received_at + CAMERA_BRIDGE_SLA_SEC
+
+
+def stage_deadline(timeout_sec: float, pipeline_deadline: Optional[float], reserve_sec: float = 0.0) -> float:
+    deadline = time.monotonic() + max(0.0, timeout_sec)
+    if pipeline_deadline:
+        deadline = min(deadline, pipeline_deadline - max(0.0, reserve_sec))
+    return deadline
+
+
+def mark_sla_state(metrics: ProcessingMetrics) -> None:
+    if metrics.sla_deadline_at and time.monotonic() > metrics.sla_deadline_at:
+        metrics.sla_exceeded = True
+
+
+def bounded_timeout_pair(
+    connect_timeout: float,
+    read_timeout: float,
+    deadline: Optional[float],
+    reserve_sec: float = 0.0,
+) -> Optional[Tuple[float, float]]:
+    remaining = time_remaining(deadline)
+    if remaining != float("inf"):
+        remaining -= max(0.0, reserve_sec)
+        if remaining <= 0:
+            return None
+
+    connect = connect_timeout
+    read = read_timeout
+    if remaining != float("inf"):
+        connect = min(connect_timeout, max(0.1, remaining))
+        read = min(read_timeout, max(0.2, remaining))
+    return connect, read
 
 
 def build_processing_metrics(metrics: ProcessingMetrics) -> Dict[str, Any]:
@@ -629,6 +731,7 @@ def build_processing_metrics(metrics: ProcessingMetrics) -> Dict[str, Any]:
             reference_utc,
         ),
         "worker_finished_at": monotonic_to_utc_iso(metrics.worker_finished_at, reference_monotonic, reference_utc),
+        "sla_deadline_at": monotonic_to_utc_iso(metrics.sla_deadline_at, reference_monotonic, reference_utc),
     }
 
     durations = {
@@ -643,6 +746,7 @@ def build_processing_metrics(metrics: ProcessingMetrics) -> Dict[str, Any]:
         "backend_post_ms": elapsed_ms(metrics.backend_post_started_at, metrics.backend_post_finished_at),
         "end_to_end_ms": elapsed_ms(metrics.rfid_received_at, metrics.worker_finished_at),
         "decision_pipeline_ms": elapsed_ms(metrics.worker_started_at, metrics.backend_post_finished_at),
+        "frame_capture_each_ms": list(metrics.frame_capture_each_ms),
     }
 
     return {
@@ -651,9 +755,20 @@ def build_processing_metrics(metrics: ProcessingMetrics) -> Dict[str, Any]:
         "counts": {
             "captured_frames": metrics.captured_frame_count,
             "selected_ocr_frames": metrics.selected_ocr_frame_count,
+            "selected_upload_frames": metrics.selected_upload_count,
+            "ocr_variants": metrics.ocr_variant_count,
         },
         "ocr": {
             "plate_found": metrics.ocr_plate_found,
+            "variant_count": metrics.ocr_variant_count,
+        },
+        "sla": {
+            "deadline_sec": CAMERA_BRIDGE_SLA_SEC,
+            "backend_reserve_sec": BACKEND_SLA_RESERVE_SEC,
+            "exceeded": bool(metrics.sla_exceeded),
+            "remaining_ms": None
+            if not metrics.sla_deadline_at
+            else int(round((metrics.sla_deadline_at - time.monotonic()) * 1000)),
         },
         "backend": {
             "decision": metrics.backend_decision,
@@ -665,10 +780,23 @@ def build_processing_metrics(metrics: ProcessingMetrics) -> Dict[str, Any]:
             "burst_count": BURST_COUNT,
             "burst_interval_sec": BURST_INTERVAL_SEC,
             "vehicle_center_delay_sec": VEHICLE_CENTER_DELAY_SEC,
+            "camera_bridge_sla_sec": CAMERA_BRIDGE_SLA_SEC,
+            "adaptive_third_frame": ADAPTIVE_THIRD_FRAME,
+            "adaptive_max_burst_count": ADAPTIVE_MAX_BURST_COUNT,
+            "upload_selected_frames_only": UPLOAD_SELECTED_FRAMES_ONLY,
             "ocr_max_images": OCR_MAX_IMAGES,
             "ocr_timeout_sec": OCR_TIMEOUT_SEC,
+            "ocr_fast_variants": OCR_FAST_VARIANTS,
+            "ocr_max_variants_per_crop": OCR_MAX_VARIANTS_PER_CROP,
             "plate_detector_conf": PLATE_DETECTOR_CONF,
             "plate_detector_fallback_full_image": PLATE_DETECTOR_FALLBACK_FULL_IMAGE,
+            "plate_detector_roi_enabled": PLATE_DETECTOR_ROI_ENABLED,
+            "plate_detector_roi": [
+                PLATE_DETECTOR_ROI_X1,
+                PLATE_DETECTOR_ROI_Y1,
+                PLATE_DETECTOR_ROI_X2,
+                PLATE_DETECTOR_ROI_Y2,
+            ],
             "backend_access_event_url": BACKEND_ACCESS_EVENT_URL,
             "esp32_cam_url": ESP32_CAM_URL,
         },
@@ -679,16 +807,20 @@ def log_metrics_summary(uid: str, metrics: ProcessingMetrics) -> None:
     summary = build_processing_metrics(metrics)
     durations = summary["durations"]
     logger.info(
-        "[METRICS] uid=%s queue=%sms capture=%sms rank=%sms ocr=%sms backend=%sms total=%sms frames=%s selected=%s",
+        "[METRICS] uid=%s queue=%sms capture=%sms frame_each=%s rank=%sms ocr=%sms variants=%s backend=%sms total=%sms frames=%s selected=%s upload=%s sla_exceeded=%s",
         uid,
         durations.get("queue_wait_ms"),
         durations.get("capture_ms"),
+        durations.get("frame_capture_each_ms"),
         durations.get("frame_ranking_ms"),
         durations.get("ocr_ms"),
+        metrics.ocr_variant_count,
         durations.get("backend_post_ms"),
         durations.get("end_to_end_ms"),
         metrics.captured_frame_count,
         metrics.selected_ocr_frame_count,
+        metrics.selected_upload_count,
+        metrics.sla_exceeded,
     )
 
 
@@ -784,27 +916,55 @@ def upscale_for_ocr(image: np.ndarray) -> np.ndarray:
 def build_ocr_variants(plate_crop: np.ndarray) -> List[Tuple[str, np.ndarray]]:
     crop = upscale_for_ocr(plate_crop)
     gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) if len(crop.shape) == 3 else crop
-    clahe = cv2.createCLAHE(clipLimit=CLAHE_CLIP_LIMIT, tileGridSize=(CLAHE_TILE_SIZE, CLAHE_TILE_SIZE))
-    enhanced = clahe.apply(gray)
-    denoised = cv2.bilateralFilter(enhanced, d=5, sigmaColor=45, sigmaSpace=45)
-    sharpen_kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
-    sharpened = cv2.filter2D(denoised, -1, sharpen_kernel)
-    adaptive = cv2.adaptiveThreshold(
-        denoised,
-        255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,
-        31,
-        7,
-    )
+    quality = calculate_quality(crop)
 
-    return [
-        ("color", ensure_bgr(crop)),
-        ("gray", ensure_bgr(gray)),
-        ("clahe", ensure_bgr(denoised)),
-        ("sharp", ensure_bgr(sharpened)),
-        ("adaptive", ensure_bgr(adaptive)),
-    ]
+    if not OCR_FAST_VARIANTS:
+        selected_names = ["color", "gray", "clahe", "sharp", "adaptive"]
+    else:
+        selected_names = ["color", "clahe"]
+        needs_sharp = quality["blur_score"] < MIN_BLUR_SCORE or quality["contrast"] < OCR_FAST_MIN_CONTRAST
+        needs_adaptive = (
+            quality["brightness"] < OCR_FAST_MIN_BRIGHTNESS
+            or quality["brightness"] > OCR_FAST_MAX_BRIGHTNESS
+            or quality["glare_ratio"] > OCR_FAST_MAX_GLARE_RATIO
+        )
+        if needs_adaptive:
+            selected_names.append("adaptive")
+        if needs_sharp:
+            selected_names.extend(["sharp", "adaptive"])
+        selected_names = list(dict.fromkeys(selected_names))
+        selected_names = selected_names[: max(1, OCR_MAX_VARIANTS_PER_CROP)]
+
+    variants: List[Tuple[str, np.ndarray]] = []
+    if "color" in selected_names:
+        variants.append(("color", ensure_bgr(crop)))
+    if "gray" in selected_names:
+        variants.append(("gray", ensure_bgr(gray)))
+
+    denoised = None
+    if any(name in selected_names for name in ("clahe", "sharp", "adaptive")):
+        clahe = cv2.createCLAHE(clipLimit=CLAHE_CLIP_LIMIT, tileGridSize=(CLAHE_TILE_SIZE, CLAHE_TILE_SIZE))
+        enhanced = clahe.apply(gray)
+        denoised = cv2.bilateralFilter(enhanced, d=5, sigmaColor=45, sigmaSpace=45)
+
+    if "clahe" in selected_names and denoised is not None:
+        variants.append(("clahe", ensure_bgr(denoised)))
+    if "sharp" in selected_names and denoised is not None:
+        sharpen_kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
+        sharpened = cv2.filter2D(denoised, -1, sharpen_kernel)
+        variants.append(("sharp", ensure_bgr(sharpened)))
+    if "adaptive" in selected_names and denoised is not None:
+        adaptive = cv2.adaptiveThreshold(
+            denoised,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            31,
+            7,
+        )
+        variants.append(("adaptive", ensure_bgr(adaptive)))
+
+    return variants
 
 
 def preprocess_image(image_path: str) -> Optional[np.ndarray]:
@@ -853,7 +1013,119 @@ def decode_jpeg(content: bytes) -> Optional[np.ndarray]:
     return image
 
 
-def capture_burst(card_uid: str) -> CaptureBatch:
+def should_capture_extra_frame(frames: Sequence[CapturedFrame]) -> bool:
+    if not ADAPTIVE_THIRD_FRAME:
+        return False
+    if len(frames) >= max(BURST_COUNT, ADAPTIVE_MAX_BURST_COUNT):
+        return False
+    if not frames:
+        return True
+    if len(frames) < max(1, BURST_COUNT):
+        return True
+
+    best = max(frames, key=lambda item: item.quality_score)
+    return (
+        best.blur_score < MIN_BLUR_SCORE
+        or best.brightness < ADAPTIVE_MIN_BRIGHTNESS
+        or best.brightness > ADAPTIVE_MAX_BRIGHTNESS
+        or best.glare_ratio > ADAPTIVE_MAX_GLARE_RATIO
+    )
+
+
+def capture_single_frame(
+    *,
+    capture_batch_id: str,
+    frame_no: int,
+    metrics: Optional[ProcessingMetrics] = None,
+    deadline: Optional[float] = None,
+) -> Optional[CapturedFrame]:
+    timeouts = bounded_timeout_pair(
+        ESP32_CAM_CONNECT_TIMEOUT,
+        ESP32_CAM_READ_TIMEOUT,
+        deadline,
+        reserve_sec=BACKEND_SLA_RESERVE_SEC,
+    )
+    if timeouts is None:
+        logger.warning("[CAMERA] Skipping frame %s because SLA budget is exhausted", frame_no)
+        if metrics:
+            metrics.sla_exceeded = True
+        return None
+
+    captured_at = utcnow()
+    filename = f"{capture_batch_id}_frame{frame_no}.jpg"
+    path = CAPTURE_DIR / filename
+    started_at = time.monotonic()
+    try:
+        response = _http.get(ESP32_CAM_URL, timeout=timeouts)
+        response.raise_for_status()
+        content = response.content
+
+        if len(content) > CAPTURE_IMAGE_MAX_BYTES:
+            logger.warning(
+                "[CAMERA] Frame %s too large for backend limit: %s bytes",
+                frame_no,
+                len(content),
+            )
+
+        image = decode_jpeg(content)
+        if image is None:
+            logger.error("[CAMERA] Frame %s decode failed", frame_no)
+            return None
+
+        path.write_bytes(content)
+        capture_ms = int(round((time.monotonic() - started_at) * 1000))
+        if metrics:
+            metrics.frame_capture_each_ms.append(capture_ms)
+
+        height, width = image.shape[:2]
+        quality = calculate_quality(resize_for_processing(image))
+        frame = CapturedFrame(
+            frame_no=frame_no,
+            path=path,
+            filename=filename,
+            captured_at=captured_at,
+            byte_size=len(content),
+            width=width,
+            height=height,
+            capture_ms=capture_ms,
+            blur_score=quality["blur_score"],
+            brightness=quality["brightness"],
+            contrast=quality["contrast"],
+            glare_ratio=quality["glare_ratio"],
+            quality_score=quality["blur_score"],
+        )
+        logger.info(
+            "[CAMERA] Saved frame %s: %s bytes=%s capture=%sms blur=%.2f brightness=%.1f glare=%.4f",
+            frame_no,
+            filename,
+            len(content),
+            capture_ms,
+            frame.blur_score,
+            frame.brightness,
+            frame.glare_ratio,
+        )
+        return frame
+    except requests.Timeout:
+        logger.error("[ERROR] Camera timeout on frame %s", frame_no)
+    except requests.RequestException as exc:
+        logger.error("[ERROR] Camera request failed on frame %s: %s", frame_no, exc)
+    except OSError as exc:
+        logger.error("[ERROR] Failed to save frame %s: %s", frame_no, exc)
+    except Exception as exc:
+        logger.exception("[ERROR] Unexpected capture error on frame %s: %s", frame_no, exc)
+    finally:
+        if metrics:
+            mark_sla_state(metrics)
+
+    return None
+
+
+def capture_burst(
+    card_uid: str,
+    *,
+    metrics: Optional[ProcessingMetrics] = None,
+    deadline: Optional[float] = None,
+) -> CaptureBatch:
     ensure_capture_dir()
     cleanup_old_captures()
 
@@ -861,56 +1133,45 @@ def capture_burst(card_uid: str) -> CaptureBatch:
     capture_batch_id = f"{safe_uid(card_uid)}_{batch_timestamp}"
     frames: List[CapturedFrame] = []
 
-    logger.info("[CAMERA] Capturing burst images: count=%s url=%s", BURST_COUNT, ESP32_CAM_URL)
-    for frame_no in range(1, BURST_COUNT + 1):
-        captured_at = utcnow()
-        filename = f"{capture_batch_id}_frame{frame_no}.jpg"
-        path = CAPTURE_DIR / filename
-        try:
-            response = _http.get(
-                ESP32_CAM_URL,
-                timeout=(ESP32_CAM_CONNECT_TIMEOUT, ESP32_CAM_READ_TIMEOUT),
-            )
-            response.raise_for_status()
-            content = response.content
+    base_count = max(1, BURST_COUNT)
+    max_count = max(base_count, ADAPTIVE_MAX_BURST_COUNT if ADAPTIVE_THIRD_FRAME else base_count)
+    logger.info(
+        "[CAMERA] Capturing burst images: base=%s max=%s adaptive=%s url=%s",
+        base_count,
+        max_count,
+        ADAPTIVE_THIRD_FRAME,
+        ESP32_CAM_URL,
+    )
 
-            if len(content) > CAPTURE_IMAGE_MAX_BYTES:
-                logger.warning(
-                    "[CAMERA] Frame %s too large for backend limit: %s bytes",
-                    frame_no,
-                    len(content),
-                )
+    frame_no = 1
+    while frame_no <= max_count:
+        if frame_no > base_count and not should_capture_extra_frame(frames):
+            break
 
-            image = decode_jpeg(content)
-            if image is None:
-                logger.error("[CAMERA] Frame %s decode failed", frame_no)
-                continue
+        frame = capture_single_frame(
+            capture_batch_id=capture_batch_id,
+            frame_no=frame_no,
+            metrics=metrics,
+            deadline=deadline,
+        )
+        if frame:
+            frames.append(frame)
 
-            path.write_bytes(content)
-            height, width = image.shape[:2]
-            frames.append(
-                CapturedFrame(
-                    frame_no=frame_no,
-                    path=path,
-                    filename=filename,
-                    captured_at=captured_at,
-                    byte_size=len(content),
-                    width=width,
-                    height=height,
-                )
-            )
-            logger.info("[CAMERA] Saved frame %s: %s bytes=%s", frame_no, filename, len(content))
-        except requests.Timeout:
-            logger.error("[ERROR] Camera timeout on frame %s", frame_no)
-        except requests.RequestException as exc:
-            logger.error("[ERROR] Camera request failed on frame %s: %s", frame_no, exc)
-        except OSError as exc:
-            logger.error("[ERROR] Failed to save frame %s: %s", frame_no, exc)
-        except Exception as exc:
-            logger.exception("[ERROR] Unexpected capture error on frame %s: %s", frame_no, exc)
+        if frame_no >= base_count and not should_capture_extra_frame(frames):
+            break
 
-        if frame_no < BURST_COUNT:
-            time.sleep(BURST_INTERVAL_SEC)
+        if frame_no < max_count:
+            remaining = time_remaining(deadline)
+            sleep_sec = min(BURST_INTERVAL_SEC, max(0.0, remaining - BACKEND_SLA_RESERVE_SEC))
+            if sleep_sec > 0:
+                time.sleep(sleep_sec)
+            elif deadline:
+                logger.warning("[CAMERA] Skipping burst interval because SLA budget is exhausted")
+                if metrics:
+                    metrics.sla_exceeded = True
+                break
+
+        frame_no += 1
 
     return CaptureBatch(card_uid=card_uid, capture_batch_id=capture_batch_id, frames=frames)
 
@@ -925,8 +1186,12 @@ def capture_burst_images(card_uid: str) -> List[str]:
 
 
 def analyze_frame(frame: CapturedFrame) -> None:
+    if frame.analyzed:
+        return
+
     image = load_image(frame.path)
     if image is None:
+        frame.analyzed = True
         return
 
     image = resize_for_processing(image)
@@ -943,6 +1208,7 @@ def analyze_frame(frame: CapturedFrame) -> None:
     frame.glare_ratio = quality["glare_ratio"]
     detector_bonus = selected.confidence * 100.0 if selected else 0.0
     frame.quality_score = frame.blur_score + detector_bonus
+    frame.analyzed = True
 
     logger.info(
         "[CAMERA] Quality %s blur=%.2f brightness=%.1f contrast=%.1f detector=%s score=%.2f",
@@ -955,8 +1221,14 @@ def analyze_frame(frame: CapturedFrame) -> None:
     )
 
 
-def rank_frames_for_ocr(frames: Sequence[CapturedFrame]) -> List[CapturedFrame]:
+def rank_frames_for_ocr(
+    frames: Sequence[CapturedFrame],
+    deadline: Optional[float] = None,
+) -> List[CapturedFrame]:
     for frame in frames:
+        if deadline and time_remaining(deadline) <= BACKEND_SLA_RESERVE_SEC:
+            logger.warning("[CAMERA] Stopping frame ranking because SLA budget is near backend reserve")
+            break
         analyze_frame(frame)
     ranked = sorted(frames, key=lambda item: item.quality_score, reverse=True)
     selected = ranked[: max(1, min(OCR_MAX_IMAGES, len(ranked)))]
@@ -976,7 +1248,11 @@ def save_debug_crop(frame: CapturedFrame, crop: np.ndarray, variant_name: str) -
         logger.warning("[OCR] Failed to save debug crop: %s", exc)
 
 
-def ocr_frame(frame: CapturedFrame, deadline: float) -> Optional[PlateCandidate]:
+def ocr_frame(
+    frame: CapturedFrame,
+    deadline: float,
+    metrics: Optional[ProcessingMetrics] = None,
+) -> Optional[PlateCandidate]:
     image = load_image(frame.path)
     if image is None:
         return None
@@ -1014,6 +1290,8 @@ def ocr_frame(frame: CapturedFrame, deadline: float) -> Optional[PlateCandidate]
                 logger.warning("[OCR] Timeout budget exceeded while reading variants")
                 return best
 
+            if metrics:
+                metrics.ocr_variant_count += 1
             raw_items = runtime.read_text(variant_image)
             if not raw_items:
                 continue
@@ -1059,6 +1337,8 @@ def ocr_frame(frame: CapturedFrame, deadline: float) -> Optional[PlateCandidate]
 def extract_plate_number_from_frames(
     frames: Sequence[CapturedFrame],
     timeout: float = OCR_TIMEOUT_SEC,
+    deadline: Optional[float] = None,
+    metrics: Optional[ProcessingMetrics] = None,
 ) -> Tuple[Optional[str], float]:
     if CAMERA_BRIDGE_MODE == "capture_only":
         return None, 0.0
@@ -1068,15 +1348,24 @@ def extract_plate_number_from_frames(
         logger.error("[OCR] PaddleOCR is not loaded")
         return None, 0.0
 
-    deadline = time.monotonic() + timeout
+    if deadline is None:
+        deadline = time.monotonic() + timeout
+    if time.monotonic() >= deadline:
+        logger.warning("[OCR] Skipping OCR because SLA budget is exhausted")
+        if metrics:
+            metrics.sla_exceeded = True
+        return None, 0.0
+
     best: Optional[PlateCandidate] = None
     for index, frame in enumerate(frames, start=1):
         if time.monotonic() >= deadline:
             logger.warning("[OCR] Timeout budget exceeded: %.1fs", timeout)
+            if metrics:
+                metrics.sla_exceeded = True
             break
 
         logger.info("[OCR] Reading image %s/%s: %s", index, len(frames), frame.filename)
-        candidate = ocr_frame(frame, deadline)
+        candidate = ocr_frame(frame, deadline, metrics=metrics)
         if candidate is None:
             continue
         if best is None or candidate.confidence > best.confidence:
@@ -1128,9 +1417,10 @@ def extract_plate_number(image_paths: Sequence[str], timeout: float = OCR_TIMEOU
     return extract_plate_number_from_frames(ranked, timeout=timeout)
 
 
-def build_frame_metadata(batch: CaptureBatch) -> List[Dict[str, Any]]:
+def build_frame_metadata(batch: CaptureBatch | Sequence[CapturedFrame]) -> List[Dict[str, Any]]:
+    frames = batch.frames if isinstance(batch, CaptureBatch) else batch
     metadata = []
-    for frame in batch.frames:
+    for frame in frames:
         selected = frame.selected_detection
         metadata.append(
             {
@@ -1141,6 +1431,7 @@ def build_frame_metadata(batch: CaptureBatch) -> List[Dict[str, Any]]:
                 "byte_size": frame.byte_size,
                 "width": frame.width,
                 "height": frame.height,
+                "capture_ms": frame.capture_ms,
                 "blur_score": round(frame.blur_score, 3),
                 "brightness": round(frame.brightness, 3),
                 "contrast": round(frame.contrast, 3),
@@ -1151,10 +1442,29 @@ def build_frame_metadata(batch: CaptureBatch) -> List[Dict[str, Any]]:
                 "detections": [detection.as_dict() for detection in frame.detections],
                 "plate_detector_model": PLATE_DETECTOR_MODEL,
                 "plate_detector_loaded": runtime.detector_loaded,
+                "plate_detector_roi_enabled": PLATE_DETECTOR_ROI_ENABLED,
+                "plate_detector_roi": [
+                    PLATE_DETECTOR_ROI_X1,
+                    PLATE_DETECTOR_ROI_Y1,
+                    PLATE_DETECTOR_ROI_X2,
+                    PLATE_DETECTOR_ROI_Y2,
+                ],
                 "ocr_engine": "paddleocr",
             }
         )
     return metadata
+
+
+def select_frames_for_upload(frames: Sequence[CapturedFrame]) -> List[CapturedFrame]:
+    if not frames:
+        return []
+    if not UPLOAD_SELECTED_FRAMES_ONLY:
+        return list(frames)
+
+    selected = [frame for frame in frames if frame.selected_for_ocr]
+    if not selected:
+        selected = [max(frames, key=lambda item: item.quality_score)]
+    return sorted(selected, key=lambda item: item.frame_no)
 
 
 # ==============================================================================
@@ -1162,11 +1472,20 @@ def build_frame_metadata(batch: CaptureBatch) -> List[Dict[str, Any]]:
 # ==============================================================================
 
 
-def is_registration_mode_enabled() -> bool:
+def is_registration_mode_enabled(deadline: Optional[float] = None) -> bool:
     try:
+        timeout_pair = bounded_timeout_pair(
+            min(BACKEND_CONNECT_TIMEOUT, 0.5),
+            REGISTRATION_MODE_CHECK_TIMEOUT,
+            deadline,
+            reserve_sec=BACKEND_SLA_RESERVE_SEC,
+        )
+        if timeout_pair is None:
+            logger.warning("[REGISTRATION] Skipping registration mode check because SLA budget is exhausted")
+            return False
         response = _http.get(
             f"{BACKEND_API_BASE_URL}/rfid/registration-mode",
-            timeout=(BACKEND_CONNECT_TIMEOUT, 3.0),
+            timeout=timeout_pair,
         )
         response.raise_for_status()
         data = response.json()
@@ -1200,15 +1519,18 @@ def post_registration_scan(card_uid: str) -> Optional[Dict[str, Any]]:
 def post_access_event_to_backend(
     *,
     batch: CaptureBatch,
+    upload_frames: Optional[Sequence[CapturedFrame]] = None,
     plate_number: Optional[str],
     confidence: float,
     frame_metadata: Sequence[Dict[str, Any]],
     processing_metrics: Dict[str, Any],
+    deadline: Optional[float] = None,
 ) -> Optional[Dict[str, Any]]:
     opened_files = []
     files = []
     try:
-        for frame in batch.frames:
+        frames_to_upload = list(upload_frames) if upload_frames is not None else list(batch.frames)
+        for frame in frames_to_upload:
             handle = frame.path.open("rb")
             opened_files.append(handle)
             files.append(("images", (frame.filename, handle, "image/jpeg")))
@@ -1230,11 +1552,20 @@ def post_access_event_to_backend(
             len(files),
             plate_number or "-",
         )
+        timeout_pair = bounded_timeout_pair(
+            BACKEND_CONNECT_TIMEOUT,
+            BACKEND_READ_TIMEOUT,
+            deadline,
+            reserve_sec=0.0,
+        )
+        if timeout_pair is None:
+            logger.error("[ERROR] Backend access-event skipped because SLA budget is exhausted")
+            return None
         response = _http.post(
             BACKEND_ACCESS_EVENT_URL,
             data=data,
             files=files,
-            timeout=(BACKEND_CONNECT_TIMEOUT, BACKEND_READ_TIMEOUT),
+            timeout=timeout_pair,
         )
         response.raise_for_status()
         result = response.json()
@@ -1341,10 +1672,11 @@ def process_rfid_event(event: RFIDEvent) -> None:
 
     metrics = ProcessingMetrics(rfid_received_at=event.received_at)
     metrics.worker_started_at = time.monotonic()
+    metrics.sla_deadline_at = sla_deadline_for_event(event)
     try:
         logger.info("=" * 80)
         logger.info("[RFID] UID received: %s", uid)
-        if is_registration_mode_enabled():
+        if is_registration_mode_enabled(metrics.sla_deadline_at):
             logger.info("[REGISTRATION] Registration mode active; skipping camera/OCR for uid=%s", uid)
             metrics.backend_post_started_at = time.monotonic()
             result = post_registration_scan(uid)
@@ -1356,11 +1688,17 @@ def process_rfid_event(event: RFIDEvent) -> None:
             return
 
         metrics.vehicle_center_delay_started_at = time.monotonic()
-        time.sleep(VEHICLE_CENTER_DELAY_SEC)
+        delay_budget = time_remaining(metrics.sla_deadline_at) - BACKEND_SLA_RESERVE_SEC
+        delay_sec = min(VEHICLE_CENTER_DELAY_SEC, max(0.0, delay_budget))
+        if delay_sec > 0:
+            time.sleep(delay_sec)
+        elif VEHICLE_CENTER_DELAY_SEC > 0:
+            logger.warning("[SLA] Skipping vehicle center delay because budget is low")
+            metrics.sla_exceeded = True
         metrics.vehicle_center_delay_finished_at = time.monotonic()
 
         metrics.capture_started_at = time.monotonic()
-        batch = capture_burst(uid)
+        batch = capture_burst(uid, metrics=metrics, deadline=metrics.sla_deadline_at)
         metrics.capture_finished_at = time.monotonic()
         metrics.captured_frame_count = len(batch.frames)
         if not batch.frames:
@@ -1375,25 +1713,39 @@ def process_rfid_event(event: RFIDEvent) -> None:
             return
 
         metrics.ranking_started_at = time.monotonic()
-        ranked_frames = rank_frames_for_ocr(batch.frames)
+        ranked_frames = rank_frames_for_ocr(batch.frames, deadline=metrics.sla_deadline_at)
         metrics.ranking_finished_at = time.monotonic()
         metrics.selected_ocr_frame_count = len(ranked_frames)
 
         metrics.ocr_started_at = time.monotonic()
-        plate_number, confidence = extract_plate_number_from_frames(ranked_frames, timeout=OCR_TIMEOUT_SEC)
+        ocr_deadline = stage_deadline(
+            OCR_TIMEOUT_SEC,
+            metrics.sla_deadline_at,
+            reserve_sec=BACKEND_SLA_RESERVE_SEC,
+        )
+        plate_number, confidence = extract_plate_number_from_frames(
+            ranked_frames,
+            timeout=OCR_TIMEOUT_SEC,
+            deadline=ocr_deadline,
+            metrics=metrics,
+        )
         metrics.ocr_finished_at = time.monotonic()
         metrics.ocr_plate_found = bool(plate_number)
         if not plate_number:
             logger.warning("[OCR] No valid plate detected. Backend will apply fallback policy.")
 
-        metadata = build_frame_metadata(batch)
+        upload_frames = select_frames_for_upload(batch.frames)
+        metrics.selected_upload_count = len(upload_frames)
+        metadata = build_frame_metadata(upload_frames)
         metrics.backend_post_started_at = time.monotonic()
         result = post_access_event_to_backend(
             batch=batch,
+            upload_frames=upload_frames,
             plate_number=plate_number,
             confidence=confidence,
             frame_metadata=metadata,
             processing_metrics=build_processing_metrics(metrics),
+            deadline=metrics.sla_deadline_at,
         )
         metrics.backend_post_finished_at = time.monotonic()
         if result is None:
@@ -1414,6 +1766,7 @@ def process_rfid_event(event: RFIDEvent) -> None:
         logger.exception("[ERROR] Worker failed for uid=%s: %s", uid, exc)
     finally:
         metrics.worker_finished_at = time.monotonic()
+        mark_sla_state(metrics)
         log_metrics_summary(uid, metrics)
         mark_done(uid)
         gc.collect()
@@ -1494,6 +1847,23 @@ def main() -> None:
         PLATE_DETECTOR_MODEL,
         PLATE_DETECTOR_REQUIRED,
         PLATE_DETECTOR_FALLBACK_FULL_IMAGE,
+    )
+    logger.info(
+        "[SYSTEM] SLA=%ss backend_reserve=%ss adaptive_third=%s upload_selected=%s fast_variants=%s max_variants=%s",
+        CAMERA_BRIDGE_SLA_SEC,
+        BACKEND_SLA_RESERVE_SEC,
+        ADAPTIVE_THIRD_FRAME,
+        UPLOAD_SELECTED_FRAMES_ONLY,
+        OCR_FAST_VARIANTS,
+        OCR_MAX_VARIANTS_PER_CROP,
+    )
+    logger.info(
+        "[SYSTEM] YOLO ROI enabled=%s roi=(%.2f, %.2f, %.2f, %.2f)",
+        PLATE_DETECTOR_ROI_ENABLED,
+        PLATE_DETECTOR_ROI_X1,
+        PLATE_DETECTOR_ROI_Y1,
+        PLATE_DETECTOR_ROI_X2,
+        PLATE_DETECTOR_ROI_Y2,
     )
 
     ensure_capture_dir()

@@ -120,13 +120,49 @@ function actionBadge(action) {
     return 'secondary';
 }
 
+function gateStateSummary(event) {
+    if (!event?.gate_open_sent) return 'NO';
+    if (event.gate_ack_status === 'acked') return 'SENT / ACK';
+    if (event.gate_ack_status === 'failed') return 'SENT / FAIL';
+    return 'SENT / WAIT';
+}
+
+function gateStatusHtml(event) {
+    if (!event?.gate_open_sent) {
+        return '<span class="badge bg-secondary">Chua gui</span>';
+    }
+
+    const commandId = event.gate_command_id ? String(event.gate_command_id) : '';
+    const shortCommandId = commandId ? commandId.slice(-8) : '';
+    const commandHtml = shortCommandId
+        ? `<div><code title="${escapeHtml(commandId)}">${escapeHtml(shortCommandId)}</code></div>`
+        : '';
+
+    let ackBadge = '<span class="badge bg-warning text-dark">Cho ACK</span>';
+    if (event.gate_ack_status === 'acked') {
+        ackBadge = '<span class="badge bg-success">Barrier mo</span>';
+    } else if (event.gate_ack_status === 'failed') {
+        ackBadge = '<span class="badge bg-danger">ACK loi</span>';
+    } else if (event.gate_ack_status === 'received') {
+        ackBadge = '<span class="badge bg-info text-dark">ACK</span>';
+    }
+
+    return `
+        <div class="d-flex flex-column gap-1">
+            <span class="badge bg-primary">Da gui</span>
+            ${ackBadge}
+            ${commandHtml}
+        </div>
+    `;
+}
+
 async function loadEvents() {
     const limit = document.getElementById('eventLimit')?.value || '20';
     const tbody = document.getElementById('eventsTable');
     const result = await api.get(`/access-events/events?limit=${limit}`);
 
     if (!result?.success) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-danger">Không tải được access events</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-danger">Không tải được access events</td></tr>';
         return [];
     }
 
@@ -136,11 +172,11 @@ async function loadEvents() {
 
     const latest = events[0];
     if (latest) {
-        document.getElementById('lastGateState').textContent = latest.gate_open_sent ? 'OPEN' : 'NO';
+        document.getElementById('lastGateState').textContent = gateStateSummary(latest);
     }
 
     if (!events.length) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">Chưa có event</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">Chưa có event</td></tr>';
         return events;
     }
 
@@ -157,6 +193,7 @@ async function loadEvents() {
             </td>
             <td><code>${escapeHtml(event.session_id || '-')}</code></td>
             <td>${escapeHtml(event.reason || event.review_reason || '-')}</td>
+            <td>${gateStatusHtml(event)}</td>
             <td>${event.review_required ? '<span class="badge bg-warning">Review</span>' : '<span class="badge bg-success">OK</span>'}</td>
         </tr>
     `).join('');

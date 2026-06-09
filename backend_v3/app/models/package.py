@@ -6,6 +6,8 @@ from typing import Optional
 from datetime import datetime, timedelta
 from enum import Enum
 
+from app.utils.timezone import now_local
+
 
 class PackageType(str, Enum):
     """Package types"""
@@ -21,17 +23,17 @@ class Package(BaseModel):
     vehicle_id: str
     package_type: PackageType
     price: float = Field(..., description="Package price (VND)")
-    start_date: datetime = Field(default_factory=datetime.now)
+    start_date: datetime = Field(default_factory=now_local)
     expire_date: datetime
     remaining_uses: Optional[int] = None
     status: str = Field("active", description="active, expired, cancelled")
-    created_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=now_local)
     
     @classmethod
     def calculate_expire_date(cls, package_type: PackageType, start_date: datetime = None):
         """Calculate expiration date based on package type"""
         if start_date is None:
-            start_date = datetime.now()
+            start_date = now_local()
         
         if package_type == PackageType.DAILY:
             return start_date + timedelta(days=1)

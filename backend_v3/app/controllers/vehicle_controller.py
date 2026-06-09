@@ -4,7 +4,6 @@ Vehicle Controller.
 Vehicle records are owned by one active customer. Plate numbers are normalized
 before saving so OCR, registration, and duplicate checks use the same format.
 """
-from datetime import datetime
 import re
 from typing import Optional
 
@@ -15,6 +14,7 @@ from app.database import get_database
 from app.models.vehicle import VehicleCreate, VehicleUpdate
 from app.utils.id_generator import generate_id
 from app.utils.serializers import serialize_list, serialize_mongodb_document
+from app.utils.timezone import now_local
 
 router = APIRouter()
 
@@ -77,9 +77,17 @@ async def get_vehicles(
     total = await db.vehicles.count_documents(query)
     vehicles = await db.vehicles.find(query).skip(skip).limit(limit).to_list(length=limit)
 
+    customer_ids = sorted({vehicle.get("customer_id") for vehicle in vehicles if vehicle.get("customer_id")})
+    customers = (
+        await db.customers.find({"customer_id": {"$in": customer_ids}}).to_list(length=len(customer_ids))
+        if customer_ids
+        else []
+    )
+    customers_by_id = {customer.get("customer_id"): customer for customer in customers}
+
     enriched_vehicles = []
     for vehicle in vehicles:
-        customer = await db.customers.find_one({"customer_id": vehicle.get("customer_id")})
+        customer = customers_by_id.get(vehicle.get("customer_id"))
         enriched_vehicles.append(
             {
                 **serialize_mongodb_document(vehicle),
@@ -111,7 +119,7 @@ async def create_vehicle(vehicle: VehicleCreate, db: AsyncIOMotorDatabase = Depe
         raise HTTPException(status_code=400, detail="Plate number already exists")
 
     vehicle_id = await generate_id(db, "vehicles", "V")
-    dt = datetime.now()
+    dt = now_local()
 
     new_vehicle = {
         "vehicle_id": vehicle_id,
@@ -166,7 +174,7 @@ async def update_vehicle(
         else:
             update_data["vehicle_type"] = update_data["vehicle_type"].value
 
-    update_data["updated_at"] = datetime.now()
+    update_data["updated_at"] = now_local()
 
     await db.vehicles.update_one({"vehicle_id": vehicle_id}, {"$set": update_data})
 

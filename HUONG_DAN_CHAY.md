@@ -35,14 +35,20 @@ netstat -ano | findstr :1883
 
 ```powershell
 cd E:\PBL5-SmartParking_ESP32\backend_v3
-copy .env.local .env
+copy .env.example .env
 conda activate pbl5-ai
 python check_mongodb.py
 python init_data.py
 python -m app.main
 ```
 
-Backend: `http://localhost:8000`
+Backend: `http://127.0.0.1:8000`
+
+Trong demo offline nen giu:
+
+```env
+API_RELOAD=false
+```
 
 ## 3. Chay camera bridge
 
@@ -50,9 +56,10 @@ Sua `backend_v3\.env` de tro dung ESP32-CAM:
 
 ```env
 MQTT_BROKER=127.0.0.1
-MQTT_BROKER_PORT=1883
-ESP32_CAM_CAPTURE_URL=http://IP_ESP32_CAM/capture
-BACKEND_API_BASE_URL=http://localhost:8000/api/v1
+MQTT_PORT=1883
+MQTT_TOPIC_GATE_ACK=pbl5/smartparking/gate_ack
+ESP32_CAM_URL=http://IP_ESP32_CAM/capture
+BACKEND_API_BASE_URL=http://127.0.0.1:8000/api/v1
 ```
 
 Chay:
@@ -91,9 +98,10 @@ Trong `firmware/esp32_config.py`, dung MQTT local:
 
 ```python
 MQTT_BROKER = "IP_MAY_TINH_CHAY_MOSQUITTO"
-MQTT_BROKER_PORT = 1883
+MQTT_PORT = 1883
 MQTT_TOPIC_RFID = "pbl5/smartparking/rfid_scanned"
 MQTT_TOPIC_GATE = "pbl5/smartparking/gate"
+MQTT_TOPIC_GATE_ACK = "pbl5/smartparking/gate_ack"
 ```
 
 Khong upload `firmware/legacy_esp32_main.py` cho luong hien tai. File nay la
@@ -110,7 +118,12 @@ Quet RFID
 -> Luu parking_events/sessions
 -> Backend publish MQTT open gate
 -> ESP32 mo barrier
+-> ESP32 publish gate_ack de backend/UI xac nhan
 ```
+
+`gate_ack` hien tai xac nhan ESP32 da nhan lenh va da chay ham mo servo. Neu
+muon xac nhan vat ly tuyet doi barrier da len het hanh trinh, can gan them
+cam bien hanh trinh/limit switch va gui ACK sau khi cam bien bao mo.
 
 Endpoint that su xu ly vao/ra:
 
@@ -151,13 +164,13 @@ Backend se validate:
 Backend:
 
 ```powershell
-curl http://localhost:8000/health
+curl http://127.0.0.1:8000/health
 ```
 
 Registration/test endpoint:
 
 ```powershell
-curl -X POST http://localhost:8000/api/v1/rfid/scan `
+curl -X POST http://127.0.0.1:8000/api/v1/rfid/scan `
   -H "Content-Type: application/json" `
   -d "{\"card_uid\":\"0xa3d6ce05\"}"
 ```
@@ -171,6 +184,8 @@ duoc phep mo cong.
   `1883`, firewall Windows va Mosquitto dang chay.
 - Backend ket noi MongoDB loi: kiem tra MongoDB service hoac lenh `mongod`.
 - Barrier khong mo du log accepted: kiem tra backend publish MQTT, ESP32 subscribe
-  topic gate, topic trong `.env` va `esp32_config.py` phai trung nhau.
+  topic gate, topic trong `.env` va `esp32_config.py` phai trung nhau. Trang
+  Camera events se hien `Da gui` neu backend da publish va `Barrier mo` khi
+  ESP32 da phan hoi `gate_ack`.
 - Anh/OCR cham: xem dong `[METRICS]` trong camera bridge de biet cham o capture,
   rank, OCR hay backend.

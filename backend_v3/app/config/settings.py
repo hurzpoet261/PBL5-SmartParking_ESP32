@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     # API
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000
-    API_RELOAD: bool = True
+    API_RELOAD: bool = False
     API_TITLE: str = "Smart Parking API V3"
     API_VERSION: str = "3.0.0"
     API_DESCRIPTION: str = "Professional Smart Parking Management System"
@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     MQTT_QOS: int = 1
     MQTT_TOPIC_RFID: str = "pbl5/smartparking/rfid_scanned"
     MQTT_TOPIC_GATE: str = "pbl5/smartparking/gate"
+    MQTT_TOPIC_GATE_ACK: str = "pbl5/smartparking/gate_ack"
     MQTT_TOPIC_PARKING_STATUS: str = "pbl5/smartparking/parking_status"
     BACKEND_MQTT_CLIENT_ID: str = "SmartParkingBackendGate"
     

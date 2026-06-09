@@ -4,11 +4,11 @@ Customer Controller
 from fastapi import APIRouter, Depends, HTTPException, Query
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from typing import Optional, List
-from datetime import datetime
 
 from app.database import get_database
 from app.utils.id_generator import generate_id
 from app.utils.serializers import serialize_mongodb_document, serialize_list
+from app.utils.timezone import now_local
 from app.models.customer import CustomerCreate, CustomerUpdate, CustomerType
 
 router = APIRouter()
@@ -74,7 +74,7 @@ async def get_customer(customer_id: str, db: AsyncIOMotorDatabase = Depends(get_
         "customer_id": customer_id,
         "status": "active",
         "package_type": {"$in": ["daily", "monthly"]},
-        "expire_date": {"$gt": datetime.now()}
+        "expire_date": {"$gt": now_local()}
     })
     
     # Calculate total spent
@@ -100,6 +100,7 @@ async def create_customer(customer: CustomerCreate, db: AsyncIOMotorDatabase = D
     """Create new customer"""
     customer_id = await generate_id(db, "customers", "C")
     
+    dt = now_local()
     new_customer = {
         "customer_id": customer_id,
         "name": customer.name,
@@ -109,8 +110,8 @@ async def create_customer(customer: CustomerCreate, db: AsyncIOMotorDatabase = D
         "id_card": customer.id_card,
         "customer_type": customer.customer_type.value,
         "balance": 0.0,
-        "created_at": datetime.now(),
-        "updated_at": datetime.now(),
+        "created_at": dt,
+        "updated_at": dt,
         "is_active": True,
         "notes": customer.notes
     }
@@ -137,7 +138,7 @@ async def update_customer(
         raise HTTPException(status_code=404, detail="Customer not found")
     
     update_data = customer.model_dump(exclude_unset=True)
-    update_data["updated_at"] = datetime.now()
+    update_data["updated_at"] = now_local()
     
     await db.customers.update_one(
         {"customer_id": customer_id},

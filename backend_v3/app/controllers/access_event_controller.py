@@ -31,10 +31,12 @@ from app.database import get_database
 from app.models.parking_slot import SlotStatus
 from app.models.session import SessionStatus
 from app.services.fee_calculator import FeeCalculator
+from app.services.gate_ack import gate_ack_update_fields
 from app.services.gate_mqtt import gate_mqtt_publisher
 from app.services.parking_status import publish_parking_status_update
 from app.utils.id_generator import generate_id
 from app.utils.serializers import serialize_mongodb_document
+from app.utils.timezone import now_local
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +75,8 @@ OCR_DEBUG_ROTATION = os.getenv("OCR_DEBUG_ROTATION", os.getenv("OCR_ROTATIONS", 
 
 
 def utcnow() -> datetime:
-    return datetime.utcnow()
+    # Kept as a compatibility wrapper for existing call sites.
+    return now_local()
 
 
 def normalize_plate(value: str) -> str:
@@ -473,6 +476,9 @@ def build_event_doc(
     gate_open_sent: bool,
     review_required: bool,
     processing_metrics: Optional[Dict[str, Any]] = None,
+    gate_command_id: Optional[str] = None,
+    gate_command_status: Optional[str] = None,
+    gate_ack_status: Optional[str] = None,
 ) -> Dict[str, Any]:
     event_doc = {
         "event_id": event_id,
@@ -493,6 +499,12 @@ def build_event_doc(
         "review_required": review_required,
         "created_at": utcnow(),
     }
+    if gate_command_id:
+        event_doc["gate_command_id"] = gate_command_id
+    if gate_command_status:
+        event_doc["gate_command_status"] = gate_command_status
+    if gate_ack_status:
+        event_doc["gate_ack_status"] = gate_ack_status
     if processing_metrics:
         event_doc["processing_metrics"] = processing_metrics
     return event_doc
@@ -556,8 +568,37 @@ async def reject_event(
     }
 
 
-async def publish_open_gate() -> bool:
-    return await asyncio.to_thread(gate_mqtt_publisher.publish_open)
+async def publish_open_gate(
+    *,
+    event_id: str,
+    session_id: Optional[str],
+    action: str,
+    gate_id: int,
+) -> Dict[str, Any]:
+    return await asyncio.to_thread(
+        gate_mqtt_publisher.publish_open,
+        event_id=event_id,
+        session_id=session_id,
+        action=action,
+        gate_id=gate_id,
+    )
+
+
+async def apply_gate_ack_if_available(
+    db: AsyncIOMotorDatabase,
+    command_id: Optional[str],
+    event_doc: Dict[str, Any],
+) -> None:
+    ack = gate_mqtt_publisher.get_ack(command_id)
+    if not ack:
+        return
+
+    fields = gate_ack_update_fields(ack)
+    await db.parking_events.update_one(
+        {"event_id": event_doc["event_id"], "gate_command_id": command_id},
+        {"$set": fields},
+    )
+    event_doc.update(fields)
 
 
 async def find_vehicle_by_normalized_plate(
@@ -699,6 +740,90 @@ async def rollback_walk_in_binding(
     )
 
 
+def is_auto_walk_in_card(card: Optional[Dict[str, Any]]) -> bool:
+    if not card:
+        return False
+    return str(card.get("notes") or "").startswith("Walk-in card auto-created")
+
+
+def is_auto_walk_in_customer(customer: Optional[Dict[str, Any]], card_uid: str) -> bool:
+    if not customer:
+        return False
+    if customer.get("customer_type") != "walk_in":
+        return False
+    notes = str(customer.get("notes") or "")
+    return notes.startswith("Auto-created from walk-in card") and card_uid in notes
+
+
+async def release_walk_in_binding_after_exit(
+    *,
+    db: AsyncIOMotorDatabase,
+    card: Dict[str, Any],
+    customer: Optional[Dict[str, Any]],
+    session_id: str,
+) -> Dict[str, Any]:
+    """Delete temporary walk-in customer/vehicle/card after the vehicle exits."""
+    card_uid = str(card.get("card_uid") or "")
+    customer_id = card.get("customer_id")
+    vehicle_id = card.get("vehicle_id")
+
+    if not (card_uid and customer_id and vehicle_id):
+        return {"released": False, "reason": "missing_walk_in_binding_fields"}
+    if not is_auto_walk_in_card(card) or not is_auto_walk_in_customer(customer, card_uid):
+        return {"released": False, "reason": "not_auto_walk_in_binding"}
+
+    active_sessions = await db.sessions.count_documents(
+        {
+            "customer_id": customer_id,
+            "vehicle_id": vehicle_id,
+            "status": SessionStatus.IN_PROGRESS.value,
+            "session_id": {"$ne": session_id},
+        }
+    )
+    if active_sessions:
+        return {"released": False, "reason": "other_active_walk_in_session"}
+
+    card_delete = await db.rfid_cards.delete_one(
+        {
+            "card_uid": card_uid,
+            "customer_id": customer_id,
+            "vehicle_id": vehicle_id,
+            "notes": {"$regex": "^Walk-in card auto-created"},
+        }
+    )
+    vehicle_delete = await db.vehicles.delete_one(
+        {
+            "vehicle_id": vehicle_id,
+            "customer_id": customer_id,
+        }
+    )
+    customer_delete = await db.customers.delete_one(
+        {
+            "customer_id": customer_id,
+            "customer_type": "walk_in",
+            "notes": {"$regex": f"^Auto-created from walk-in card {re.escape(card_uid)}"},
+        }
+    )
+
+    released = bool(card_delete.deleted_count)
+    logger.info(
+        "[ACCESS] Walk-in released uid=%s customer=%s vehicle=%s session=%s card_deleted=%s vehicle_deleted=%s customer_deleted=%s",
+        card_uid,
+        customer_id,
+        vehicle_id,
+        session_id,
+        card_delete.deleted_count,
+        vehicle_delete.deleted_count,
+        customer_delete.deleted_count,
+    )
+    return {
+        "released": released,
+        "card_deleted": card_delete.deleted_count,
+        "vehicle_deleted": vehicle_delete.deleted_count,
+        "customer_deleted": customer_delete.deleted_count,
+    }
+
+
 async def process_entry(
     *,
     db: AsyncIOMotorDatabase,
@@ -789,14 +914,21 @@ async def process_entry(
         )
         raise
 
+    event_id = await generate_id(db, "parking_events", "E")
     if processing_metrics:
         mark_backend_timestamp(processing_metrics, "gate_publish_started_at")
     gate_publish_started_at = time.perf_counter()
-    gate_open_sent = await publish_open_gate()
+    gate_publish_result = await publish_open_gate(
+        event_id=event_id,
+        session_id=session_id,
+        action="entry",
+        gate_id=gate_id,
+    )
+    gate_open_sent = bool(gate_publish_result.get("success"))
+    gate_command_id = gate_publish_result.get("command_id")
     if processing_metrics:
         set_backend_duration(processing_metrics, "gate_publish_ms", gate_publish_started_at)
         mark_backend_timestamp(processing_metrics, "gate_publish_finished_at")
-    event_id = await generate_id(db, "parking_events", "E")
     if not gate_open_sent:
         logger.error(
             "[ACCESS] Entry gate publish failed; rolling back session=%s slot=%s",
@@ -836,6 +968,8 @@ async def process_entry(
             gate_open_sent=False,
             review_required=True,
             processing_metrics=processing_metrics,
+            gate_command_id=gate_command_id,
+            gate_command_status="publish_failed",
         )
         event_doc["rolled_back"] = True
         event_doc["slot_id"] = available_slot["slot_id"]
@@ -859,6 +993,8 @@ async def process_entry(
             "session_id": session_id,
             "slot_id": available_slot["slot_id"],
             "rolled_back": True,
+            "gate_command_id": gate_command_id,
+            "gate_ack_status": None,
             "event": serialize_mongodb_document(event_doc),
         }
 
@@ -882,8 +1018,12 @@ async def process_entry(
         gate_open_sent=True,
         review_required=review_required,
         processing_metrics=processing_metrics,
+        gate_command_id=gate_command_id,
+        gate_command_status="sent",
+        gate_ack_status="pending",
     )
     await record_parking_event(db, event_doc)
+    await apply_gate_ack_if_available(db, gate_command_id, event_doc)
     await link_captures_to_decision(
         db=db,
         capture_batch_id=capture_batch_id,
@@ -903,6 +1043,8 @@ async def process_entry(
         "session_id": session_id,
         "slot_id": available_slot["slot_id"],
         "review_required": review_required,
+        "gate_command_id": gate_command_id,
+        "gate_ack_status": event_doc.get("gate_ack_status"),
         "event": serialize_mongodb_document(event_doc),
     }
 
@@ -924,6 +1066,10 @@ async def process_exit(
 ) -> Dict[str, Any]:
     dt = utcnow()
     entry_time = active_session["entry_time"]
+    customer = await db.customers.find_one({"customer_id": card.get("customer_id")})
+    customer_name_snapshot = customer.get("name") if customer else None
+    plate_number_snapshot = normalize_plate(str(vehicle.get("plate_number", "")))
+
     package_lookup_started_at = time.perf_counter()
     active_package = await db.packages.find_one(
         {
@@ -938,14 +1084,21 @@ async def process_exit(
         set_backend_duration(processing_metrics, "package_lookup_ms", package_lookup_started_at)
     parking_fee = 0.0 if active_package else FeeCalculator.calculate_parking_fee(entry_time, dt)
 
+    event_id = await generate_id(db, "parking_events", "E")
     if processing_metrics:
         mark_backend_timestamp(processing_metrics, "gate_publish_started_at")
     gate_publish_started_at = time.perf_counter()
-    gate_open_sent = await publish_open_gate()
+    gate_publish_result = await publish_open_gate(
+        event_id=event_id,
+        session_id=active_session["session_id"],
+        action="exit",
+        gate_id=gate_id,
+    )
+    gate_open_sent = bool(gate_publish_result.get("success"))
+    gate_command_id = gate_publish_result.get("command_id")
     if processing_metrics:
         set_backend_duration(processing_metrics, "gate_publish_ms", gate_publish_started_at)
         mark_backend_timestamp(processing_metrics, "gate_publish_finished_at")
-    event_id = await generate_id(db, "parking_events", "E")
     if not gate_open_sent:
         if processing_metrics:
             mark_backend_timestamp(processing_metrics, "decision_finished_at")
@@ -967,6 +1120,8 @@ async def process_exit(
             gate_open_sent=False,
             review_required=True,
             processing_metrics=processing_metrics,
+            gate_command_id=gate_command_id,
+            gate_command_status="publish_failed",
         )
         event_doc["parking_fee"] = parking_fee
         event_doc["review_reason"] = review_reason or "gate_publish_failed"
@@ -988,6 +1143,8 @@ async def process_exit(
             "open_gate": False,
             "session_id": active_session["session_id"],
             "parking_fee": parking_fee,
+            "gate_command_id": gate_command_id,
+            "gate_ack_status": None,
             "event": serialize_mongodb_document(event_doc),
         }
 
@@ -1006,6 +1163,9 @@ async def process_exit(
                 "exit_ocr_confidence": ocr_confidence,
                 "exit_review_required": review_required,
                 "exit_review_reason": review_reason,
+                "customer_name_snapshot": customer_name_snapshot,
+                "plate_number_snapshot": plate_number_snapshot,
+                "card_uid_snapshot": card.get("card_uid"),
             }
         },
     )
@@ -1067,11 +1227,15 @@ async def process_exit(
         gate_open_sent=True,
         review_required=review_required,
         processing_metrics=processing_metrics,
+        gate_command_id=gate_command_id,
+        gate_command_status="sent",
+        gate_ack_status="pending",
     )
     event_doc["parking_fee"] = parking_fee
     event_doc["transaction_id"] = transaction_id
     event_doc["review_reason"] = review_reason
     await record_parking_event(db, event_doc)
+    await apply_gate_ack_if_available(db, gate_command_id, event_doc)
     await link_captures_to_decision(
         db=db,
         capture_batch_id=capture_batch_id,
@@ -1083,6 +1247,34 @@ async def process_exit(
     )
     await publish_parking_status_update(db)
 
+    walk_in_cleanup = await release_walk_in_binding_after_exit(
+        db=db,
+        card=card,
+        customer=customer,
+        session_id=active_session["session_id"],
+    )
+    if walk_in_cleanup.get("released"):
+        await db.sessions.update_one(
+            {"session_id": active_session["session_id"]},
+            {
+                "$set": {
+                    "walk_in_released": True,
+                    "walk_in_cleanup": walk_in_cleanup,
+                }
+            },
+        )
+        await db.parking_events.update_one(
+            {"event_id": event_id},
+            {
+                "$set": {
+                    "walk_in_released": True,
+                    "walk_in_cleanup": walk_in_cleanup,
+                }
+            },
+        )
+        event_doc["walk_in_released"] = True
+        event_doc["walk_in_cleanup"] = walk_in_cleanup
+
     return {
         "success": True,
         "decision": "accepted",
@@ -1092,6 +1284,10 @@ async def process_exit(
         "parking_fee": parking_fee,
         "transaction_id": transaction_id,
         "review_required": review_required,
+        "gate_command_id": gate_command_id,
+        "gate_ack_status": event_doc.get("gate_ack_status"),
+        "walk_in_released": bool(walk_in_cleanup.get("released")),
+        "walk_in_cleanup": walk_in_cleanup,
         "event": serialize_mongodb_document(event_doc),
     }
 
@@ -1132,6 +1328,8 @@ async def handle_rfid_camera_event(
             "reason": existing_event.get("reason"),
             "open_gate": bool(existing_event.get("gate_open_sent", False)),
             "session_id": existing_event.get("session_id"),
+            "gate_command_id": existing_event.get("gate_command_id"),
+            "gate_ack_status": existing_event.get("gate_ack_status"),
             "idempotent": True,
             "event": serialized_event,
         }

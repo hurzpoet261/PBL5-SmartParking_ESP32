@@ -39,6 +39,16 @@ httpd_handle_t stream_httpd = NULL;
 #define STREAM_FRAME_SIZE FRAMESIZE_VGA
 #define STREAM_JPEG_QUALITY 12
 #define STREAM_FRAME_DELAY_MS 60
+#define CAPTURE_SETTLE_DELAY_MS 40
+#define STREAM_SETTLE_DELAY_MS 80
+
+enum CameraProfile {
+    PROFILE_UNKNOWN,
+    PROFILE_CAPTURE,
+    PROFILE_STREAM
+};
+
+static CameraProfile current_profile = PROFILE_UNKNOWN;
 
 // MJPEG streaming config.
 // Keep /capture for Python camera_bridge.py.
@@ -50,24 +60,36 @@ static const char* STREAM_BOUNDARY_LINE = "\r\n--" STREAM_BOUNDARY "\r\n";
 static const char* STREAM_PART_HEADER = "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
 
 // API xử lý lệnh chụp ảnh tĩnh
-static void apply_capture_profile() {
+static bool apply_capture_profile() {
+    if (current_profile == PROFILE_CAPTURE) {
+        return false;
+    }
+
     sensor_t *s = esp_camera_sensor_get();
     if (!s) {
-        return;
+        return false;
     }
 
     s->set_framesize(s, CAPTURE_FRAME_SIZE);
     s->set_quality(s, CAPTURE_JPEG_QUALITY);
+    current_profile = PROFILE_CAPTURE;
+    return true;
 }
 
-static void apply_stream_profile() {
+static bool apply_stream_profile() {
+    if (current_profile == PROFILE_STREAM) {
+        return false;
+    }
+
     sensor_t *s = esp_camera_sensor_get();
     if (!s) {
-        return;
+        return false;
     }
 
     s->set_framesize(s, STREAM_FRAME_SIZE);
     s->set_quality(s, STREAM_JPEG_QUALITY);
+    current_profile = PROFILE_STREAM;
+    return true;
 }
 
 static esp_err_t capture_handler(httpd_req_t *req) {
@@ -76,8 +98,9 @@ static esp_err_t capture_handler(httpd_req_t *req) {
     esp_err_t res = ESP_OK;
 
     // Chụp 1 tấm ảnh
-    apply_capture_profile();
-    delay(120);
+    if (apply_capture_profile()) {
+        delay(CAPTURE_SETTLE_DELAY_MS);
+    }
 
     fb = esp_camera_fb_get();
     if (!fb) {
@@ -109,8 +132,9 @@ static esp_err_t stream_handler(httpd_req_t *req) {
     esp_err_t res = ESP_OK;
     char part_buf[96];
 
-    apply_stream_profile();
-    delay(120);
+    if (apply_stream_profile()) {
+        delay(STREAM_SETTLE_DELAY_MS);
+    }
 
     res = httpd_resp_set_type(req, STREAM_CONTENT_TYPE);
     if (res != ESP_OK) {
@@ -201,6 +225,7 @@ void setup() {
     s->set_awb_gain(s, 1);
     s->set_exposure_ctrl(s, 1);
     s->set_gain_ctrl(s, 1);
+    apply_capture_profile();
 
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(false);

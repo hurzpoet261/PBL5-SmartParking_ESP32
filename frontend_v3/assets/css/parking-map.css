@@ -31,8 +31,129 @@
     grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
 }
 
+.legacy-map-warning {
+    grid-column: 1 / -1;
+    padding: 0.75rem 1rem;
+    border: 1px solid #F59E0B;
+    border-radius: 8px;
+    background: #FFFBEB;
+    color: #92400E;
+    font-size: 0.875rem;
+}
+
+.parking-layout-host {
+    background: white;
+}
+
+.parking-layout-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #E5E7EB;
+}
+
+.parking-layout-toolbar > div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+}
+
+.parking-layout-scroll {
+    width: 100%;
+    overflow: auto;
+    padding: 1rem;
+    background:
+        linear-gradient(90deg, rgba(229, 231, 235, 0.45) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(229, 231, 235, 0.45) 1px, transparent 1px),
+        #F9FAFB;
+    background-size: 32px 32px;
+}
+
+.parking-layout-svg {
+    display: block;
+    width: 100%;
+    min-width: 720px;
+    max-height: 720px;
+    border: 1px solid #E5E7EB;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.82);
+}
+
+.layout-boundary {
+    fill: rgba(59, 130, 246, 0.08);
+    stroke: #2563EB;
+    stroke-width: 3;
+    stroke-dasharray: 10 7;
+    pointer-events: none;
+}
+
+.layout-obstacle {
+    fill: rgba(239, 68, 68, 0.18);
+    stroke: #DC2626;
+    stroke-width: 2.5;
+    pointer-events: none;
+}
+
+.layout-slot {
+    cursor: pointer;
+    outline: none;
+}
+
+.layout-slot polygon {
+    stroke-width: 1.5;
+    transition: filter 0.15s ease, stroke-width 0.15s ease;
+}
+
+.layout-slot:hover polygon,
+.layout-slot:focus polygon {
+    filter: drop-shadow(0 3px 4px rgba(31, 41, 55, 0.28));
+    stroke-width: 2.5;
+}
+
+.layout-slot.available polygon {
+    fill: rgba(209, 250, 229, 0.86);
+    stroke: #10B981;
+}
+
+.layout-slot.occupied polygon {
+    fill: rgba(254, 226, 226, 0.9);
+    stroke: #EF4444;
+}
+
+.layout-slot.reserved polygon {
+    fill: rgba(254, 243, 199, 0.92);
+    stroke: #F59E0B;
+}
+
+.layout-slot.maintenance polygon {
+    fill: rgba(229, 231, 235, 0.92);
+    stroke: #6B7280;
+}
+
+.layout-slot-label {
+    pointer-events: none;
+    dominant-baseline: middle;
+    text-anchor: middle;
+    fill: #111827;
+    paint-order: stroke;
+    stroke: rgba(255, 255, 255, 0.82);
+    stroke-width: 3px;
+    font-weight: 700;
+}
+
 @media (max-width: 768px) {
     .parking-grid {
         grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    }
+
+    .parking-layout-toolbar {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .parking-layout-svg {
+        min-width: 560px;
     }
 }

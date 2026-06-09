@@ -5,12 +5,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
 from typing import Any, Dict
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.services.gate_mqtt import gate_mqtt_publisher
+from app.utils.timezone import iso_local
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ async def build_parking_status(db: AsyncIOMotorDatabase) -> Dict[str, Any]:
         "occupied": occupied,
         "reserved": reserved,
         "maintenance": maintenance,
-        "updated_at": datetime.utcnow().isoformat(),
+        "updated_at": iso_local(),
     }
 
 

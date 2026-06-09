@@ -3,34 +3,110 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Thiết kế Bãi đỗ xe - Smart Parking</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <title>Thiết kế bãi đỗ - Smart Parking</title>
+    <link href="../assets/vendor/bootstrap/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/vendor/bootstrap-icons/bootstrap-icons.css">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <script src="../assets/vendor/fabric/fabric.min.js"></script>
     <style>
         body { background-color: #f8f9fa; }
-        .canvas-container { margin: 20px auto; border: 2px solid #dee2e6; border-radius: 8px; background: white; cursor: crosshair; }
-        .toolbar { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        .mode-active { border: 2px solid #0d6efd !important; background-color: #e7f1ff !important; }
+        .canvas-container {
+            margin: 20px auto;
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            background: white;
+            cursor: crosshair;
+        }
+        .toolbar,
+        .layout-summary {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .toolbar { margin-bottom: 20px; }
+        .mode-active {
+            border: 2px solid #0d6efd !important;
+            background-color: #e7f1ff !important;
+        }
+        .layout-option {
+            min-width: 150px;
+            text-align: left;
+        }
     </style>
 </head>
 <body>
-<div class="container-fluid py-4">
+<div class="sidebar">
+    <div class="sidebar-header">
+        <h4><i class="bi bi-car-front-fill"></i> Smart Parking</h4>
+    </div>
+    <nav class="sidebar-nav">
+        <a href="../index.html" class="nav-link">
+            <i class="bi bi-speedometer2"></i> Dashboard
+        </a>
+        <a href="register-card.html" class="nav-link">
+            <i class="bi bi-credit-card-2-front"></i> Đăng ký thẻ
+        </a>
+        <a href="customers.html" class="nav-link">
+            <i class="bi bi-people"></i> Khách hàng
+        </a>
+        <a href="vehicles.html" class="nav-link">
+            <i class="bi bi-car-front"></i> Xe
+        </a>
+        <a href="parking-map.html" class="nav-link">
+            <i class="bi bi-grid-3x3"></i> Map chỗ đỗ
+        </a>
+        <a href="map-designer.html" class="nav-link active">
+            <i class="bi bi-bounding-box-circles"></i> Thiết kế bãi đỗ
+        </a>
+        <a href="packages.html" class="nav-link">
+            <i class="bi bi-box-seam"></i> Gói cước
+        </a>
+        <a href="sessions.html" class="nav-link">
+            <i class="bi bi-clock-history"></i> Lịch sử
+        </a>
+        <a href="access-events.html" class="nav-link">
+            <i class="bi bi-camera-video"></i> Camera events
+        </a>
+        <a href="revenue.html" class="nav-link">
+            <i class="bi bi-graph-up"></i> Doanh thu
+        </a>
+    </nav>
+</div>
+
+<div class="main-content">
+<div class="container-fluid py-0">
     <div class="row">
         <div class="col-12">
-            <h3 class="mb-4"><i class="bi bi-pencil-square"></i> Thiết kế Sơ đồ Bãi đỗ xe</h3>
-            
+            <h3 class="mb-4"><i class="bi bi-pencil-square"></i> Thiết kế sơ đồ bãi đỗ xe</h3>
+
             <div class="toolbar d-flex flex-wrap gap-2 align-items-center">
                 <input type="file" id="uploadMap" class="form-control form-control-sm w-auto" accept="image/*">
                 <div class="btn-group" role="group">
-                    <button class="btn btn-outline-primary btn-sm" onclick="setMode('boundary')" id="btn-boundary">1. Vẽ Ranh giới</button>
-                    <button class="btn btn-outline-danger btn-sm" onclick="setMode('obstacle')" id="btn-obstacle">2. Vẽ Vật cản</button>
-                    <button class="btn btn-outline-warning btn-sm" onclick="setMode('scale')" id="btn-scale">3. Đặt Tỷ lệ</button>
+                    <button class="btn btn-outline-primary btn-sm" onclick="setMode('boundary')" id="btn-boundary">1. Vẽ ranh giới</button>
+                    <button class="btn btn-outline-danger btn-sm" onclick="setMode('obstacle')" id="btn-obstacle">2. Vẽ vật cản</button>
+                    <button class="btn btn-outline-warning btn-sm" onclick="setMode('scale')" id="btn-scale">3. Đặt tỷ lệ</button>
                 </div>
+                <select class="form-select form-select-sm w-auto" id="slotType">
+                    <option value="car" selected>O to 2.5 x 5.0m</option>
+                    <option value="motorbike">Xe may 1.0 x 2.0m</option>
+                </select>
+                <div class="input-group input-group-sm w-auto" style="min-width: 260px;">
+                    <span class="input-group-text">Góc thử</span>
+                    <input type="text" class="form-control" id="angleInput" value="0,15,30,45,60,75,90">
+                </div>
+                <label class="form-check-label small d-flex align-items-center gap-1">
+                    <input class="form-check-input mt-0" type="checkbox" id="replaceExisting" checked>
+                    Ghi đè slot trống
+                </label>
                 <div class="ms-auto d-flex gap-2">
                     <button class="btn btn-secondary btn-sm" onclick="resetCanvas()">Làm mới</button>
-                    <button class="btn btn-success btn-sm" onclick="generateLayout()">
-                        <i class="bi bi-magic"></i> Tối ưu hóa & Lưu
+                    <button class="btn btn-outline-secondary btn-sm" onclick="clearGeneratedSlots()">Xóa preview</button>
+                    <button class="btn btn-success btn-sm" onclick="generateLayout()" id="btnGenerateLayout">
+                        <i class="bi bi-magic"></i> Tạo preview
+                    </button>
+                    <button class="btn btn-primary btn-sm" onclick="confirmLayout()" id="btnConfirmLayout" disabled>
+                        <i class="bi bi-check2-circle"></i> Xác nhận lưu
                     </button>
                 </div>
             </div>
@@ -38,222 +114,455 @@
             <div class="text-center">
                 <canvas id="mainCanvas"></canvas>
             </div>
-            
+
+            <div class="layout-summary mt-3 d-none" id="layoutSummary"></div>
+
             <div class="mt-3 text-muted small">
-                <strong>Hướng dẫn:</strong> 
-                (1) Chọn ảnh bản vẽ -> (2) Click các điểm để bao quanh khu đất -> (3) Click lại điểm đầu để đóng vùng -> (4) Kéo 1 đoạn thẳng và nhập chiều dài thật để lấy tỷ lệ.
+                <strong>Hướng dẫn:</strong>
+                Chọn ảnh bản vẽ, vẽ ranh giới bãi, vẽ vật cản nếu có, đặt tỷ lệ mét/pixel,
+                tạo preview nhiều góc, review hình ảnh rồi chỉ lưu phương án bạn chọn.
             </div>
         </div>
     </div>
 </div>
+</div>
 
 <script src="../assets/js/api.js"></script>
 <script>
-    const canvas = new fabric.Canvas('mainCanvas', { width: 1000, height: 600 });
-    let currentMode = null;
-    let tempPoints = [];
-    let tempLines = [];
-    let scaleFactor = null; // mét/pixel
+const canvas = new fabric.Canvas('mainCanvas', { width: 1000, height: 600 });
+let currentMode = null;
+let tempPoints = [];
+let tempObjects = [];
+let scaleFactor = null; // meter per pixel
+let latestPreview = null;
+let selectedLayoutOption = null;
 
-    // 1. Tải ảnh lên làm nền
-    // Cập nhật phần Tải ảnh lên làm nền trong map-designer.html
-    document.getElementById('uploadMap').onchange = function(e) {
-        const reader = new FileReader();
-        reader.onload = function(f) {
-            fabric.Image.fromURL(f.target.result, function(img) {
-                // 1. Tính toán tỉ lệ để ảnh vừa khít với Canvas
-                const scale = Math.min(
-                    canvas.width / img.width, 
-                    canvas.height / img.height
-                );
+const slotDefaults = {
+    car: { slot_width: 2.5, slot_length: 5.0, aisle_width: 6.0 },
+    motorbike: { slot_width: 1.0, slot_length: 2.0, aisle_width: 2.5 }
+};
 
-                // 2. Thiết lập ảnh nền với các thuộc tính căn chỉnh
-                canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas), {
-                    scaleX: scale,
-                    scaleY: scale,
-                    // Căn giữa ảnh trên Canvas để không bị lệch xuống dưới
-                    left: canvas.width / 2,
-                    top: canvas.height / 2,
-                    originX: 'center',
-                    originY: 'center'
-                });
-                
-                // 3. Reset lại các điểm vẽ cũ nếu có
-                resetCanvas();
-            });
-        };
-        reader.readAsDataURL(e.target.files[0]);
-    };
-
-    function setMode(mode) {
-        currentMode = mode;
-        tempPoints = [];
-        // Cập nhật UI nút bấm
-        document.querySelectorAll('.toolbar button').forEach(b => b.classList.remove('mode-active'));
-        if(mode) document.getElementById('btn-' + mode).classList.add('mode-active');
-    }
-
-    // 2. Xử lý sự kiện click chuột
-    canvas.on('mouse:down', function(options) {
-        if (!currentMode) return;
-        const pointer = canvas.getPointer(options.e);
-        
-        if (currentMode === 'boundary' || currentMode === 'obstacle') {
-            handlePolygonDrawing(pointer);
-        } else if (currentMode === 'scale') {
-            handleScaleDrawing(pointer);
-        }
-    });
-
-    function handlePolygonDrawing(pointer) {
-        // Kiểm tra xem có click gần điểm đầu tiên không để đóng vùng
-        if (tempPoints.length > 2) {
-            const firstPoint = tempPoints[0];
-            const dist = Math.sqrt(Math.pow(pointer.x - firstPoint.x, 2) + Math.pow(pointer.y - firstPoint.y, 2));
-            if (dist < 15) {
-                finishPolygon();
-                return;
-            }
-        }
-
-        const point = new fabric.Circle({ radius: 4, fill: currentMode === 'boundary' ? '#0d6efd' : '#dc3545', left: pointer.x - 4, top: pointer.y - 4, selectable: false });
-        canvas.add(point);
-        tempPoints.push(pointer);
-
-        if (tempPoints.length > 1) {
-            const p1 = tempPoints[tempPoints.length - 2];
-            const line = new fabric.Line([p1.x, p1.y, pointer.x, pointer.y], {
-                stroke: currentMode === 'boundary' ? '#0d6efd' : '#dc3545', strokeWidth: 2, selectable: false
-            });
-            canvas.add(line);
-            tempLines.push(line);
-        }
-    }
-
-    function finishPolygon() {
-        const poly = new fabric.Polygon(tempPoints, {
-            fill: currentMode === 'boundary' ? 'rgba(13, 110, 253, 0.2)' : 'rgba(220, 53, 69, 0.3)',
-            stroke: currentMode === 'boundary' ? '#0d6efd' : '#dc3545',
-            strokeWidth: 2, objectType: currentMode
-        });
-        canvas.add(poly);
-        // Xóa các điểm và đường tạm
-        tempLines.forEach(l => canvas.remove(l));
-        setMode(null);
-    }
-
-    function handleScaleDrawing(pointer) {
-    // Vẽ một điểm đánh dấu tại vị trí click
-    const point = new fabric.Circle({ 
-        radius: 5, fill: '#ffc107', left: pointer.x - 5, top: pointer.y - 5, selectable: false 
-    });
-    canvas.add(point);
-    tempPoints.push(pointer);
-
-    if (tempPoints.length === 2) {
-        const p1 = tempPoints[0];
-        const p2 = tempPoints[1];
-        
-        // Vẽ đường thẳng nối 2 điểm để bạn thấy rõ đoạn mình vừa chọn
-        const line = new fabric.Line([p1.x, p1.y, p2.x, p2.y], {
-            stroke: '#ffc107', strokeWidth: 3, selectable: false
-        });
-        canvas.add(line);
-
-        const pixelDist = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
-        
-        // Sử dụng setTimeout để trình duyệt kịp vẽ đường thẳng trước khi hiện prompt
-        setTimeout(() => {
-            const realDist = prompt("Nhập chiều dài thực tế của đoạn thẳng màu vàng vừa vẽ (mét):", "10");
-            if (realDist) {
-                scaleFactor = parseFloat(realDist) / pixelDist;
-                alert(`Thành công! 1 pixel trên bản vẽ = ${scaleFactor.toFixed(4)} mét thực tế.`);
-            }
-            // Xóa đường thẳng và điểm tạm sau khi xong
-            canvas.remove(line);
-            setMode(null);
-        }, 100);
-    }
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
 }
 
-    function resetCanvas() {
-        canvas.getObjects().forEach(obj => { if(obj !== canvas.backgroundImage) canvas.remove(obj); });
-        setMode(null);
+document.getElementById('uploadMap').onchange = function(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(f) {
+        fabric.Image.fromURL(f.target.result, function(img) {
+            const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+            canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas), {
+                scaleX: scale,
+                scaleY: scale,
+                left: canvas.width / 2,
+                top: canvas.height / 2,
+                originX: 'center',
+                originY: 'center'
+            });
+            resetCanvas();
+        });
+    };
+    reader.readAsDataURL(file);
+};
+
+function setMode(mode) {
+    currentMode = mode;
+    clearTempObjects();
+    document.querySelectorAll('.toolbar button').forEach(btn => btn.classList.remove('mode-active'));
+    if (mode) document.getElementById(`btn-${mode}`)?.classList.add('mode-active');
+}
+
+function clearTempObjects() {
+    tempObjects.forEach(obj => canvas.remove(obj));
+    tempObjects = [];
+    tempPoints = [];
+    canvas.renderAll();
+}
+
+canvas.on('mouse:down', function(options) {
+    if (!currentMode) return;
+    const pointer = canvas.getPointer(options.e);
+
+    if (currentMode === 'boundary' || currentMode === 'obstacle') {
+        handlePolygonDrawing(pointer);
+    } else if (currentMode === 'scale') {
+        handleScaleDrawing(pointer);
+    }
+});
+
+function handlePolygonDrawing(pointer) {
+    if (tempPoints.length > 2) {
+        const first = tempPoints[0];
+        const distance = Math.hypot(pointer.x - first.x, pointer.y - first.y);
+        if (distance < 15) {
+            finishPolygon();
+            return;
+        }
     }
 
-    // 3. Gửi dữ liệu xuống Backend
-    async function generateLayout() {
-    if (!scaleFactor) return alert("Vui lòng đặt tỷ lệ trước!");
-    
-    // Tính toán tọa độ tuyệt đối cho ranh giới
-    const boundaryObj = canvas.getObjects().find(o => o.objectType === 'boundary');
-    const boundaryPoints = boundaryObj.points.map(p => ({
-        x: boundaryObj.left + (p.x + boundaryObj.width / 2) * boundaryObj.scaleX,
-        y: boundaryObj.top + (p.y + boundaryObj.height / 2) * boundaryObj.scaleY
-    }));
-
-    // Tính toán tọa độ tuyệt đối cho các vật cản
-    const obstacleObjs = canvas.getObjects().filter(o => o.objectType === 'obstacle');
-    const obstaclesData = obstacleObjs.map(obs => {
-        return obs.points.map(p => ({
-            x: obs.left + (p.x + obs.width / 2) * obs.scaleX,
-            y: obs.top + (p.y + obs.height / 2) * obs.scaleY
-        }));
+    const color = currentMode === 'boundary' ? '#0d6efd' : '#dc3545';
+    const point = new fabric.Circle({
+        radius: 4,
+        fill: color,
+        left: pointer.x - 4,
+        top: pointer.y - 4,
+        selectable: false
     });
+    canvas.add(point);
+    tempObjects.push(point);
 
-    const requestData = {
+    if (tempPoints.length) {
+        const previous = tempPoints[tempPoints.length - 1];
+        const line = new fabric.Line([previous.x, previous.y, pointer.x, pointer.y], {
+            stroke: color,
+            strokeWidth: 2,
+            selectable: false
+        });
+        canvas.add(line);
+        tempObjects.push(line);
+    }
+
+    tempPoints.push({ x: pointer.x, y: pointer.y });
+}
+
+function finishPolygon() {
+    if (tempPoints.length < 3) {
+        showToast('Cần ít nhất 3 điểm để tạo polygon', 'warning');
+        return;
+    }
+
+    const isBoundary = currentMode === 'boundary';
+    if (isBoundary) {
+        canvas.getObjects().filter(obj => obj.objectType === 'boundary').forEach(obj => canvas.remove(obj));
+    }
+
+    const polygon = new fabric.Polygon(tempPoints, {
+        fill: isBoundary ? 'rgba(13, 110, 253, 0.18)' : 'rgba(220, 53, 69, 0.28)',
+        stroke: isBoundary ? '#0d6efd' : '#dc3545',
+        strokeWidth: 2,
+        objectType: currentMode,
+        selectable: true
+    });
+    canvas.add(polygon);
+    clearTempObjects();
+    setMode(null);
+}
+
+function handleScaleDrawing(pointer) {
+    const point = new fabric.Circle({
+        radius: 5,
+        fill: '#ffc107',
+        left: pointer.x - 5,
+        top: pointer.y - 5,
+        selectable: false
+    });
+    canvas.add(point);
+    tempObjects.push(point);
+    tempPoints.push({ x: pointer.x, y: pointer.y });
+
+    if (tempPoints.length !== 2) return;
+
+    const [p1, p2] = tempPoints;
+    const line = new fabric.Line([p1.x, p1.y, p2.x, p2.y], {
+        stroke: '#ffc107',
+        strokeWidth: 3,
+        selectable: false
+    });
+    canvas.add(line);
+    tempObjects.push(line);
+
+    const pixelDistance = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    setTimeout(() => {
+        const realDistance = prompt('Nhập chiều dài thực tế của đoạn màu vàng vừa vẽ (mét):', '10');
+        const meters = Number(realDistance);
+        if (meters > 0 && pixelDistance > 0) {
+            scaleFactor = meters / pixelDistance;
+            showToast(`Đã đặt tỷ lệ: 1 px = ${scaleFactor.toFixed(4)} m`);
+        } else {
+            showToast('Tỷ lệ không hợp lệ', 'warning');
+        }
+        clearTempObjects();
+        setMode(null);
+    }, 100);
+}
+
+function getPolygonAbsolutePoints(polygon) {
+    return polygon.points.map(point => {
+        const transformed = fabric.util.transformPoint(
+            new fabric.Point(point.x - polygon.pathOffset.x, point.y - polygon.pathOffset.y),
+            polygon.calcTransformMatrix()
+        );
+        return { x: Number(transformed.x.toFixed(3)), y: Number(transformed.y.toFixed(3)) };
+    });
+}
+
+function getBoundaryObject() {
+    return canvas.getObjects().find(obj => obj.objectType === 'boundary');
+}
+
+function getObstacleObjects() {
+    return canvas.getObjects().filter(obj => obj.objectType === 'obstacle');
+}
+
+function validateLayoutInput() {
+    const boundary = getBoundaryObject();
+    if (!boundary) throw new Error('Vui lòng vẽ ranh giới bãi xe trước khi tối ưu layout.');
+    const boundaryPoints = getPolygonAbsolutePoints(boundary);
+    if (boundaryPoints.length < 3) throw new Error('Ranh gioi bai xe phai co it nhat 3 diem.');
+    if (!scaleFactor || scaleFactor <= 0) throw new Error('Vui lòng đặt tỷ lệ mét/pixel trước.');
+    return boundaryPoints;
+}
+
+function parseAngles() {
+    const raw = document.getElementById('angleInput').value || '';
+    const values = raw
+        .split(/[,\s;]+/)
+        .map(value => Number(value.trim()))
+        .filter(value => Number.isFinite(value));
+    const angles = [...new Set(values)];
+    if (!angles.length) throw new Error('Vui lòng nhập ít nhất một góc thử, ví dụ: 0,15,30,45,60,75,90.');
+    if (angles.length > 37) throw new Error('Không nên thử quá 37 góc trong một lần để tránh tính toán chậm.');
+    return angles;
+}
+
+function getRequestPayload() {
+    const boundary = validateLayoutInput();
+    const obstacles = getObstacleObjects().map(obj => getPolygonAbsolutePoints(obj));
+    const slotType = document.getElementById('slotType').value;
+    const defaults = slotDefaults[slotType] || slotDefaults.car;
+
+    return {
+        parking_lot_id: 'LOT1',
+        area_id: 'MAIN',
         scale_factor: scaleFactor,
-        boundary: boundaryPoints, // Đã sửa thành tọa độ tuyệt đối
-        obstacles: obstaclesData,  // Đã sửa thành tọa độ tuyệt đối
-        config: { slot_width: 2.5, slot_length: 5.0, aisle_width: 6.0 }
+        boundary,
+        obstacles,
+        config: {
+            slot_type: slotType,
+            ...defaults,
+            boundary_margin: 0.3,
+            obstacle_margin: 0.3,
+            angles: parseAngles()
+        }
     };
+}
+
+function getLayoutMetadataFromPayload(payload) {
+    return {
+        boundary: payload.boundary,
+        obstacles: payload.obstacles,
+        scale_factor: payload.scale_factor,
+        scale_unit: 'meter_per_pixel',
+        canvas_width_px: canvas.width,
+        canvas_height_px: canvas.height
+    };
+}
+
+function clearGeneratedSlots(clearPreview = true) {
+    canvas.getObjects()
+        .filter(obj => obj.objectType === 'generated-slot' || obj.objectType === 'generated-label')
+        .forEach(obj => canvas.remove(obj));
+    if (clearPreview) {
+        latestPreview = null;
+        selectedLayoutOption = null;
+        document.getElementById('btnConfirmLayout').disabled = true;
+    }
+    document.getElementById('layoutSummary').classList.add('d-none');
+    canvas.renderAll();
+}
+
+function drawGeneratedSlots(slots) {
+    clearGeneratedSlots(false);
+    slots.forEach(slot => {
+        const polygon = new fabric.Polygon(slot.points || [], {
+            fill: slot.slot_type === 'motorbike' ? 'rgba(13, 202, 240, 0.35)' : 'rgba(40, 167, 69, 0.35)',
+            stroke: '#198754',
+            strokeWidth: 1,
+            selectable: false,
+            objectType: 'generated-slot'
+        });
+        canvas.add(polygon);
+    });
+    canvas.renderAll();
+}
+
+function applyLayoutOption(optionId) {
+    if (!latestPreview?.layout_options?.length) return;
+    const option = latestPreview.layout_options.find(item => item.option_id === optionId);
+    if (!option) return;
+
+    selectedLayoutOption = option;
+    latestPreview = {
+        ...latestPreview,
+        total: option.total,
+        best_angle: option.angle,
+        best_pattern: option.pattern,
+        generated_slots: option.generated_slots || []
+    };
+    drawGeneratedSlots(latestPreview.generated_slots);
+    showLayoutSummary(latestPreview);
+    document.getElementById('btnConfirmLayout').disabled = !latestPreview.generated_slots.length;
+}
+
+function showLayoutSummary(result) {
+    const tested = (result.tested_angles || [])
+        .map(item => `${item.angle}deg: ${item.valid_slots}`)
+        .join(' | ');
+    const options = result.layout_options || [];
+    const optionButtons = options.length
+        ? `
+            <div class="mt-3">
+                <div class="fw-semibold mb-2">Phương án theo góc để review</div>
+                <div class="d-flex flex-wrap gap-2">
+                    ${options.map((option, index) => {
+                        const selected = selectedLayoutOption?.option_id === option.option_id;
+                        return `
+                            <button type="button"
+                                class="btn btn-sm layout-option ${selected ? 'btn-primary' : 'btn-outline-primary'}"
+                                onclick="applyLayoutOption('${escapeHtml(option.option_id)}')">
+                                #${index + 1} | ${option.angle}deg | ${option.total} slot<br>
+                                <span class="small">${escapeHtml(option.pattern || '-')}</span>
+                            </button>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `
+        : '';
+    const warnings = (result.warnings || []).length
+        ? `<div class="text-warning small mt-1">${result.warnings.map(escapeHtml).join('<br>')}</div>`
+        : '';
+
+    const summary = document.getElementById('layoutSummary');
+    summary.innerHTML = `
+        <div class="d-flex flex-wrap gap-4 align-items-center">
+            <div><strong>Tổng slot:</strong> ${result.total || 0}</div>
+            <div><strong>Dien tich dung duoc:</strong> ${result.usable_area_m2 || 0} m2</div>
+            <div><strong>Vat can:</strong> ${result.obstacle_area_m2 || 0} m2</div>
+            <div><strong>Góc đang xem:</strong> ${result.best_angle ?? '-'} deg</div>
+            <div><strong>Kieu:</strong> ${escapeHtml(result.best_pattern || '-')}</div>
+        </div>
+        <div class="small text-muted mt-2">Tổng slot chỉ là gợi ý từ bản vẽ. Chỉ phương án đang xem mới được lưu khi bấm Xác nhận lưu.</div>
+        <div class="small text-muted mt-2"><strong>Góc đã thử:</strong> ${escapeHtml(tested || '-')}</div>
+        ${optionButtons}
+        ${warnings}
+    `;
+    summary.classList.remove('d-none');
+}
+
+async function generateLayout() {
+    const btn = document.getElementById('btnGenerateLayout');
+    const originalText = btn.innerHTML;
 
     try {
-        const res = await api.post('/slots/generate-layout', requestData); //
-        
-        if (res.success && res.generated_slots) {
-            showToast(`Đã tạo thành công ${res.total} chỗ đỗ!`); //
-            
-            // Vẽ các slot lên canvas để xem thử
-            res.generated_slots.forEach(slot => {
-                const rect = new fabric.Rect({
-                    left: slot.x,
-                    top: slot.y,
-                    width: slot.width_px,
-                    height: slot.height_px,
-                    angle: slot.angle || 0,
-                    fill: slot.type === 'disabled' ? 'rgba(0, 123, 255, 0.4)' : 'rgba(40, 167, 69, 0.3)',
-                    stroke: '#28a745',
-                    strokeWidth: 1,
-                    selectable: false
-                });
-                canvas.add(rect);
-            });
-            canvas.renderAll();
-            
-            // Đợi 2 giây để người dùng xem rồi mới chuyển trang
-            setTimeout(() => {
-                if(confirm("Bạn có muốn lưu sơ đồ này và chuyển đến trang quản lý không?")) {
-                    window.location.href = 'parking-map.html';
-                }
-            }, 500);
-        } else {
-            alert("Lỗi từ server: " + (res.error || "Không thể tạo sơ đồ"));
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Đang tính...';
+        const payload = getRequestPayload();
+        const result = await api.post('/slots/generate-layout', payload);
+
+        if (!result?.success) {
+            throw new Error(result?.detail || result?.error || 'Không thể tạo layout');
         }
-    } catch (err) {
-        console.error("Lỗi kết nối:", err);
-        alert("Không thể kết nối tới Backend. Hãy kiểm tra console (F12).");
+        const options = (result.layout_options || []).filter(option => Array.isArray(option.generated_slots) && option.generated_slots.length);
+        const firstOption = options[0] || null;
+        const generatedSlots = firstOption?.generated_slots || result.generated_slots || [];
+        if (!Array.isArray(generatedSlots) || generatedSlots.length === 0) {
+            throw new Error('Không tìm được slot hợp lệ trong vùng đã vẽ.');
+        }
+
+        selectedLayoutOption = firstOption;
+        latestPreview = {
+            ...result,
+            layout_options: options,
+            layout_metadata: getLayoutMetadataFromPayload(payload),
+            generated_slots: generatedSlots,
+            total: firstOption?.total ?? result.total,
+            best_angle: firstOption?.angle ?? result.best_angle,
+            best_pattern: firstOption?.pattern ?? result.best_pattern
+        };
+        drawGeneratedSlots(latestPreview.generated_slots);
+        showLayoutSummary(latestPreview);
+        document.getElementById('btnConfirmLayout').disabled = false;
+        showToast(`Đã tạo ${options.length || 1} phương án. Đang xem ${latestPreview.total} slot.`);
+    } catch (error) {
+        console.error(error);
+        showToast(error.message || 'Lỗi tạo layout', 'danger');
     } finally {
         btn.disabled = false;
         btn.innerHTML = originalText;
     }
 }
+
+async function confirmLayout() {
+    if (!latestPreview?.generated_slots?.length) {
+        showToast('Chưa có layout preview để lưu', 'warning');
+        return;
+    }
+    if (!confirm('Lưu layout này vào parking_slots? Slot đang occupied sẽ được giữ lại.')) {
+        return;
+    }
+
+    const btn = document.getElementById('btnConfirmLayout');
+    const originalText = btn.innerHTML;
+    try {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Đang lưu...';
+        const result = await api.post('/slots/confirm-layout', {
+            parking_lot_id: latestPreview.config?.parking_lot_id || 'LOT1',
+            area_id: latestPreview.config?.area_id || 'MAIN',
+            replace_existing: document.getElementById('replaceExisting').checked,
+            generated_slots: latestPreview.generated_slots,
+            boundary: latestPreview.layout_metadata?.boundary || [],
+            obstacles: latestPreview.layout_metadata?.obstacles || [],
+            scale_factor: latestPreview.layout_metadata?.scale_factor || null,
+            canvas_width_px: latestPreview.layout_metadata?.canvas_width_px || canvas.width,
+            canvas_height_px: latestPreview.layout_metadata?.canvas_height_px || canvas.height
+        });
+
+        if (!result?.success) {
+            throw new Error(result?.detail || result?.error || 'Không thể lưu layout');
+        }
+
+        showToast(`Đã lưu ${result.saved} slot. Giữ lại ${result.preserved_occupied} slot đang có xe.`);
+        setTimeout(() => {
+            window.location.href = 'parking-map.html';
+        }, 500);
+    } catch (error) {
+        console.error(error);
+        showToast(error.message || 'Lỗi lưu layout', 'danger');
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+}
+
+function resetCanvas() {
+    canvas.getObjects().forEach(obj => canvas.remove(obj));
+    currentMode = null;
+    tempPoints = [];
+    tempObjects = [];
+    scaleFactor = null;
+    latestPreview = null;
+    selectedLayoutOption = null;
+    document.querySelectorAll('.toolbar button').forEach(btn => btn.classList.remove('mode-active'));
+    document.getElementById('btnConfirmLayout').disabled = true;
+    document.getElementById('layoutSummary').classList.add('d-none');
+    canvas.renderAll();
+}
+
 canvas.on('mouse:wheel', function(opt) {
-    var delta = opt.e.deltaY;
-    var zoom = canvas.getZoom();
+    const delta = opt.e.deltaY;
+    let zoom = canvas.getZoom();
     zoom *= 0.999 ** delta;
     if (zoom > 20) zoom = 20;
-    if (zoom < 0.01) zoom = 0.01;
+    if (zoom < 0.2) zoom = 0.2;
     canvas.setZoom(zoom);
     opt.e.preventDefault();
     opt.e.stopPropagation();

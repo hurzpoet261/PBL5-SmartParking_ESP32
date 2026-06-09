@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lịch sử ra vào - Smart Parking</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link href="../assets/vendor/bootstrap/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/vendor/bootstrap-icons/bootstrap-icons.css">
     <link rel="stylesheet" href="../assets/css/main.css">
 </head>
 <body>
@@ -29,6 +29,9 @@
             </a>
             <a href="parking-map.html" class="nav-link">
                 <i class="bi bi-grid-3x3"></i> Map chỗ đỗ
+            </a>
+            <a href="map-designer.html" class="nav-link">
+                <i class="bi bi-bounding-box-circles"></i> Thiết kế bãi đỗ
             </a>
             <a href="packages.html" class="nav-link">
                 <i class="bi bi-box-seam"></i> Gói cước
@@ -105,7 +108,7 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../assets/vendor/bootstrap/bootstrap.bundle.min.js"></script>
     <script src="../assets/js/api.js"></script>
     <script>
         let sessionsAutoRefresh = null;
@@ -158,6 +161,11 @@
         }
 
         function initSessionsPage() {
+            document.getElementById('statusFilter')?.addEventListener('change', loadSessions);
+            document.getElementById('dateFilter')?.addEventListener('change', loadSessions);
+            document.getElementById('searchInput')?.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') loadSessions();
+            });
             loadSessions();
             if (!sessionsAutoRefresh) {
                 sessionsAutoRefresh = setInterval(loadSessions, 5000);

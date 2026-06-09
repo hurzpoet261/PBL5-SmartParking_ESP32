@@ -6,6 +6,8 @@ from typing import Optional
 from datetime import datetime
 from enum import Enum
 
+from app.utils.timezone import now_local
+
 
 class VehicleType(str, Enum):
     """Vehicle types"""
@@ -24,8 +26,8 @@ class Vehicle(BaseModel):
     brand: Optional[str] = Field(None, max_length=50)
     model: Optional[str] = Field(None, max_length=50)
     color: Optional[str] = Field(None, max_length=30)
-    created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=now_local)
+    updated_at: datetime = Field(default_factory=now_local)
     is_active: bool = Field(True)
     
     class Config:

@@ -3,15 +3,83 @@ Parking Slot Controller
 """
 from fastapi import APIRouter, Depends, Query, HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from typing import Optional
-from datetime import datetime
+from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional
 
 from app.database import get_database
 from app.config import settings
+from app.services.layout_optimizer import LayoutConfig, LayoutValidationError, optimize_parking_layout
 from app.services.parking_status import publish_parking_status_update
 from app.utils.serializers import serialize_mongodb_document, serialize_list
+from app.utils.timezone import now_local
 
 router = APIRouter()
+
+SLOT_TYPE_DEFAULTS = {
+    "car": {"slot_width": 2.5, "slot_length": 5.0, "aisle_width": 6.0},
+    "motorbike": {"slot_width": 1.0, "slot_length": 2.0, "aisle_width": 2.5},
+}
+
+
+class LayoutPoint(BaseModel):
+    x: float
+    y: float
+
+
+class LayoutConfigPayload(BaseModel):
+    slot_type: str = "car"
+    slot_width: Optional[float] = None
+    slot_length: Optional[float] = None
+    aisle_width: Optional[float] = None
+    boundary_margin: float = 0.3
+    obstacle_margin: float = 0.3
+    angles: List[float] = Field(default_factory=lambda: [0, 15, 30, 45, 60, 75, 90])
+
+
+class GenerateLayoutRequest(BaseModel):
+    scale_factor: float = Field(..., gt=0)
+    boundary: List[LayoutPoint]
+    obstacles: List[List[LayoutPoint]] = Field(default_factory=list)
+    parking_lot_id: str = "LOT1"
+    area_id: str = "MAIN"
+    config: LayoutConfigPayload = Field(default_factory=LayoutConfigPayload)
+
+
+class ConfirmLayoutRequest(BaseModel):
+    parking_lot_id: str = "LOT1"
+    area_id: str = "MAIN"
+    replace_existing: bool = True
+    generated_slots: List[Dict[str, Any]]
+    boundary: List[LayoutPoint] = Field(default_factory=list)
+    obstacles: List[List[LayoutPoint]] = Field(default_factory=list)
+    scale_factor: Optional[float] = Field(default=None, gt=0)
+    canvas_width_px: Optional[float] = Field(default=None, gt=0)
+    canvas_height_px: Optional[float] = Field(default=None, gt=0)
+
+
+def dump_points(points: List[LayoutPoint]) -> List[Dict[str, float]]:
+    return [point.model_dump() for point in points]
+
+
+def dump_obstacles(obstacles: List[List[LayoutPoint]]) -> List[List[Dict[str, float]]]:
+    return [dump_points(obstacle) for obstacle in obstacles]
+
+
+def build_layout_config(payload: GenerateLayoutRequest) -> LayoutConfig:
+    slot_type = (payload.config.slot_type or "car").strip().lower()
+    defaults = SLOT_TYPE_DEFAULTS.get(slot_type, SLOT_TYPE_DEFAULTS["car"])
+
+    return LayoutConfig(
+        slot_type=slot_type,
+        slot_width_m=payload.config.slot_width or defaults["slot_width"],
+        slot_length_m=payload.config.slot_length or defaults["slot_length"],
+        aisle_width_m=payload.config.aisle_width if payload.config.aisle_width is not None else defaults["aisle_width"],
+        boundary_margin_m=payload.config.boundary_margin,
+        obstacle_margin_m=payload.config.obstacle_margin,
+        angles=payload.config.angles,
+        parking_lot_id=(payload.parking_lot_id or "LOT1").strip().upper(),
+        area_id=(payload.area_id or "MAIN").strip().upper(),
+    )
 
 
 @router.get("")
@@ -64,6 +132,16 @@ async def get_parking_map(db: AsyncIOMotorDatabase = Depends(get_database)):
     occupied = len([s for s in slots if s.get("status") == "occupied"])
     reserved = len([s for s in slots if s.get("status") == "reserved"])
     maintenance = len([s for s in slots if s.get("status") == "maintenance"])
+    parking_lot_id = (slots[0].get("parking_lot_id") if slots else None) or "LOT1"
+    area_id = (slots[0].get("area_id") if slots else None) or "MAIN"
+    active_layout = await db.parking_layouts.find_one(
+        {
+            "parking_lot_id": parking_lot_id,
+            "area_id": area_id,
+            "status": "active",
+        },
+        sort=[("updated_at", -1)],
+    )
 
     return {
         "success": True,
@@ -78,7 +156,169 @@ async def get_parking_map(db: AsyncIOMotorDatabase = Depends(get_database)):
             "occupancy_rate": round((occupied / total_slots * 100), 1) if total_slots > 0 else 0
         },
         "data": serialized_slots,
-        "map": map_data
+        "map": map_data,
+        "layout": serialize_mongodb_document(active_layout) if active_layout else None,
+    }
+
+
+@router.post("/generate-layout")
+async def generate_layout_preview(
+    payload: GenerateLayoutRequest,
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    """Generate an optimized parking slot layout for preview only."""
+    del db
+    try:
+        result = optimize_parking_layout(
+            boundary=[point.model_dump() for point in payload.boundary],
+            obstacles=[[point.model_dump() for point in obstacle] for obstacle in payload.obstacles],
+            scale_factor=payload.scale_factor,
+            config=build_layout_config(payload),
+        )
+        result["mode"] = "preview"
+        return result
+    except LayoutValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/confirm-layout")
+async def confirm_layout(
+    payload: ConfirmLayoutRequest,
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    """Persist a previously generated layout, without deleting occupied slots."""
+    if not payload.generated_slots:
+        raise HTTPException(status_code=400, detail="generated_slots is required")
+
+    parking_lot_id = (payload.parking_lot_id or "LOT1").strip().upper()
+    area_id = (payload.area_id or "MAIN").strip().upper()
+    lot_filter = {
+        "$or": [
+            {"parking_lot_id": parking_lot_id},
+            {"parking_lot_id": {"$exists": False}},
+        ]
+    }
+    existing_count = await db.parking_slots.count_documents(lot_filter)
+    if existing_count and not payload.replace_existing:
+        raise HTTPException(
+            status_code=400,
+            detail="Layout already exists. Set replace_existing=true to replace non-occupied slots.",
+        )
+
+    occupied_filter = {
+        "$and": [
+            lot_filter,
+            {
+                "$or": [
+                    {"status": "occupied"},
+                    {"session_id": {"$ne": None}},
+                ]
+            },
+        ]
+    }
+    occupied_slots = await db.parking_slots.find(occupied_filter).to_list(length=10000)
+    occupied_ids = {slot.get("slot_id") for slot in occupied_slots if slot.get("slot_id")}
+
+    deleted_count = 0
+    if payload.replace_existing:
+        delete_filter = {
+            "$and": [
+                lot_filter,
+                {"status": {"$ne": "occupied"}},
+                {"session_id": None},
+            ]
+        }
+        delete_result = await db.parking_slots.delete_many(delete_filter)
+        deleted_count = delete_result.deleted_count
+
+    dt = now_local()
+    layout_metadata = None
+    if payload.boundary:
+        layout_metadata = {
+            "parking_lot_id": parking_lot_id,
+            "area_id": area_id,
+            "status": "active",
+            "boundary_points": dump_points(payload.boundary),
+            "obstacle_points": dump_obstacles(payload.obstacles),
+            "scale_factor": payload.scale_factor,
+            "scale_unit": "meter_per_pixel" if payload.scale_factor else None,
+            "canvas_width_px": payload.canvas_width_px,
+            "canvas_height_px": payload.canvas_height_px,
+            "slot_count": len(payload.generated_slots),
+            "updated_at": dt,
+            "confirmed_at": dt,
+        }
+
+    used_ids = set(occupied_ids)
+    docs = []
+    for index, slot in enumerate(payload.generated_slots, start=1):
+        base_code = str(
+            slot.get("slot_id")
+            or slot.get("slot_number")
+            or slot.get("slot_code")
+            or f"{parking_lot_id}-G-{index:03d}"
+        ).strip().upper()
+        slot_id = base_code
+        suffix = 1
+        while slot_id in used_ids:
+            suffix += 1
+            slot_id = f"{base_code}-R{suffix}"
+        used_ids.add(slot_id)
+
+        doc = {
+            "slot_id": slot_id,
+            "slot_number": slot_id,
+            "slot_code": slot_id,
+            "parking_lot_id": parking_lot_id,
+            "area_id": area_id,
+            "row": int(slot.get("row") or slot.get("row_index", 0) + 1),
+            "col": int(slot.get("col") or slot.get("col_index", 0) + 1),
+            "status": "available",
+            "vehicle_id": None,
+            "session_id": None,
+            "slot_type": str(slot.get("slot_type") or "car").lower(),
+            "x": float(slot.get("x") or 0),
+            "y": float(slot.get("y") or 0),
+            "width_m": float(slot.get("width_m") or 0),
+            "length_m": float(slot.get("length_m") or 0),
+            "width_px": float(slot.get("width_px") or 0),
+            "height_px": float(slot.get("height_px") or 0),
+            "angle": float(slot.get("angle") or 0),
+            "points": slot.get("points") or [],
+            "created_at": dt,
+            "updated_at": dt,
+        }
+        docs.append(doc)
+
+    if docs:
+        await db.parking_slots.insert_many(docs)
+    if layout_metadata:
+        await db.parking_layouts.update_one(
+            {
+                "parking_lot_id": parking_lot_id,
+                "area_id": area_id,
+                "status": "active",
+            },
+            {
+                "$set": layout_metadata,
+                "$setOnInsert": {
+                    "layout_id": f"{parking_lot_id}-{area_id}-ACTIVE",
+                    "created_at": dt,
+                },
+            },
+            upsert=True,
+        )
+    await publish_parking_status_update(db)
+
+    return {
+        "success": True,
+        "message": f"Saved {len(docs)} generated slots",
+        "saved": len(docs),
+        "deleted": deleted_count,
+        "preserved_occupied": len(occupied_slots),
+        "layout_metadata_saved": bool(layout_metadata),
+        "layout_metadata": layout_metadata,
+        "data": serialize_list(docs),
     }
 
 
@@ -126,6 +366,7 @@ async def initialize_slots(db: AsyncIOMotorDatabase = Depends(get_database)):
         }
 
     slots = []
+    dt = now_local()
     for row in range(1, settings.PARKING_ROWS + 1):
         for col in range(1, settings.PARKING_COLS + 1):
             slot_id = f"{chr(64 + row)}{col:02d}"
@@ -138,8 +379,8 @@ async def initialize_slots(db: AsyncIOMotorDatabase = Depends(get_database)):
                 "vehicle_id": None,
                 "session_id": None,
                 "slot_type": "standard",
-                "created_at": datetime.now(),
-                "updated_at": datetime.now()
+                "created_at": dt,
+                "updated_at": dt
             })
 
     await db.parking_slots.insert_many(slots)

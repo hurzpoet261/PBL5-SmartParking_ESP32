@@ -7,7 +7,6 @@ RFID MQTT -> camera_bridge.py -> POST /api/v1/access-events/rfid-camera.
 POST /api/v1/rfid/scan is kept only for registration/test compatibility.
 It never creates parking sessions, never calculates fee, and never grants gate access.
 """
-from datetime import datetime
 import logging
 import re
 from typing import Optional
@@ -18,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from app.database import get_database
 from app.utils.serializers import serialize_mongodb_document
+from app.utils.timezone import iso_local, now_local
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +129,7 @@ async def start_registration_mode(db: AsyncIOMotorDatabase = Depends(get_databas
     """Enable registration mode so new RFID scans are reserved for web registration."""
 
     REGISTRATION_MODE["enabled"] = True
-    REGISTRATION_MODE["started_at"] = datetime.now().isoformat()
+    REGISTRATION_MODE["started_at"] = iso_local()
     await db.pending_scans.delete_many({})
     return {
         "success": True,
@@ -197,7 +197,7 @@ async def clear_latest_scan(db: AsyncIOMotorDatabase = Depends(get_database)):
 async def register_card(card_data: dict, db: AsyncIOMotorDatabase = Depends(get_database)):
     """Register a new RFID card after validating the customer and vehicle binding."""
 
-    dt = datetime.now()
+    dt = now_local()
     card_uid = normalize_card_uid(card_data.get("card_uid"))
     customer_id = str(card_data.get("customer_id") or "").strip()
     vehicle_id = str(card_data.get("vehicle_id") or "").strip()
@@ -245,7 +245,7 @@ async def rfid_scan(request: RFIDScanRequest, db: AsyncIOMotorDatabase = Depends
     if not card_uid:
         raise HTTPException(status_code=400, detail="card_uid is required")
 
-    dt = datetime.now()
+    dt = now_local()
     card = await find_card_by_uid(db, card_uid)
 
     if REGISTRATION_MODE["enabled"]:

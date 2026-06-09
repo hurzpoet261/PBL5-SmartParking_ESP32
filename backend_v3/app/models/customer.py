@@ -6,6 +6,8 @@ from typing import Optional
 from datetime import datetime
 from enum import Enum
 
+from app.utils.timezone import now_local
+
 
 class CustomerType(str, Enum):
     """Customer types"""
@@ -25,8 +27,8 @@ class Customer(BaseModel):
     id_card: Optional[str] = Field(None, max_length=20, description="ID Card / CMND")
     customer_type: CustomerType = Field(CustomerType.WALK_IN, description="Customer type")
     balance: float = Field(0.0, description="Account balance (VND)")
-    created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=now_local)
+    updated_at: datetime = Field(default_factory=now_local)
     is_active: bool = Field(True, description="Active status")
     notes: Optional[str] = Field(None, description="Additional notes")
     

@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Access Events - Smart Parking</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link href="../assets/vendor/bootstrap/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/vendor/bootstrap-icons/bootstrap-icons.css">
     <link rel="stylesheet" href="../assets/css/main.css">
 </head>
 <body>
@@ -28,6 +28,9 @@
             </a>
             <a href="parking-map.html" class="nav-link">
                 <i class="bi bi-grid-3x3"></i> Map chỗ đỗ
+            </a>
+            <a href="map-designer.html" class="nav-link">
+                <i class="bi bi-bounding-box-circles"></i> Thiết kế bãi đỗ
             </a>
             <a href="packages.html" class="nav-link">
                 <i class="bi bi-box-seam"></i> Gói cước
@@ -81,7 +84,7 @@
                 <div class="stat-card">
                     <div class="stat-icon bg-success"><i class="bi bi-door-open"></i></div>
                     <div class="stat-content">
-                        <div class="stat-label">Gate gần nhất</div>
+                        <div class="stat-label">Lenh / ACK</div>
                         <div class="stat-value fs-5" id="lastGateState">N/A</div>
                     </div>
                 </div>
@@ -119,11 +122,12 @@
                                 <th>OCR</th>
                                 <th>Session</th>
                                 <th>Lý do</th>
+                                <th>Gate</th>
                                 <th>Review</th>
                             </tr>
                         </thead>
                         <tbody id="eventsTable">
-                            <tr><td colspan="9" class="text-center">Đang tải...</td></tr>
+                            <tr><td colspan="10" class="text-center">Đang tải...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -197,7 +201,7 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../assets/vendor/bootstrap/bootstrap.bundle.min.js"></script>
     <script src="../assets/js/api.js"></script>
     <script src="../assets/js/access-events.js"></script>
 </body>

@@ -6,6 +6,8 @@ from typing import Optional
 from datetime import datetime
 from enum import Enum
 
+from app.utils.timezone import now_local
+
 
 class SessionStatus(str, Enum):
     """Session status"""
@@ -23,13 +25,13 @@ class Session(BaseModel):
     slot_id: Optional[str] = None
     entry_gate_id: int = 1
     exit_gate_id: Optional[int] = None
-    entry_time: datetime = Field(default_factory=datetime.now)
+    entry_time: datetime = Field(default_factory=now_local)
     exit_time: Optional[datetime] = None
     distance_cm: Optional[float] = None
     status: SessionStatus = SessionStatus.IN_PROGRESS
     parking_fee: float = 0.0
     package_id: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=now_local)
 
 
 class SessionCreate(BaseModel):

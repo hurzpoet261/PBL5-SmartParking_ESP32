@@ -4,12 +4,34 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Quản lý gói cước - Smart Parking</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link href="../assets/vendor/bootstrap/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/vendor/bootstrap-icons/bootstrap-icons.css">
     <link rel="stylesheet" href="../assets/css/main.css">
+    <style>
+        .package-kpi {
+            min-height: 104px;
+        }
+        .package-kpi .stat-icon {
+            width: 48px;
+            height: 48px;
+            font-size: 1.35rem;
+        }
+        .package-table td,
+        .package-table th {
+            vertical-align: middle;
+        }
+        .action-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.375rem;
+        }
+        .package-status-note {
+            font-size: 0.8125rem;
+            color: #6B7280;
+        }
+    </style>
 </head>
 <body>
-    <!-- Sidebar -->
     <div class="sidebar">
         <div class="sidebar-header">
             <h4><i class="bi bi-car-front-fill"></i> Smart Parking</h4>
@@ -30,6 +52,9 @@
             <a href="parking-map.html" class="nav-link">
                 <i class="bi bi-grid-3x3"></i> Map chỗ đỗ
             </a>
+            <a href="map-designer.html" class="nav-link">
+                <i class="bi bi-bounding-box-circles"></i> Thiết kế bãi đỗ
+            </a>
             <a href="packages.html" class="nav-link active">
                 <i class="bi bi-box-seam"></i> Gói cước
             </a>
@@ -45,59 +70,115 @@
         </nav>
     </div>
 
-    <!-- Main Content -->
     <div class="main-content">
         <div class="header">
-            <h2><i class="bi bi-box-seam"></i> Quản lý gói cước</h2>
+            <div>
+                <h2><i class="bi bi-box-seam"></i> Quản lý gói cước</h2>
+                <div class="package-status-note">Gói ngày/tháng quyết định xe có được miễn phí khi ra bãi hay không.</div>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-outline-primary btn-sm" onclick="refreshPackagesPage()">
+                    <i class="bi bi-arrow-clockwise"></i> Làm mới
+                </button>
+                <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createPackageModal">
+                    <i class="bi bi-plus-circle"></i> Tạo gói mới
+                </button>
+            </div>
         </div>
 
-        <!-- Filter -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <div class="stat-card package-kpi">
+                    <div class="stat-icon bg-success"><i class="bi bi-check-circle"></i></div>
+                    <div class="stat-content">
+                        <div class="stat-label">Đang hoạt động</div>
+                        <div class="stat-value" id="activePackageCount">0</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card package-kpi">
+                    <div class="stat-icon bg-warning"><i class="bi bi-hourglass-split"></i></div>
+                    <div class="stat-content">
+                        <div class="stat-label">Sắp hết hạn</div>
+                        <div class="stat-value" id="expiringPackageCount">0</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card package-kpi">
+                    <div class="stat-icon bg-info"><i class="bi bi-receipt"></i></div>
+                    <div class="stat-content">
+                        <div class="stat-label">Doanh thu gói</div>
+                        <div class="stat-value fs-5" id="packageRevenue">0đ</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card package-kpi">
+                    <div class="stat-icon bg-secondary"><i class="bi bi-x-circle"></i></div>
+                    <div class="stat-content">
+                        <div class="stat-label">Hết hạn / hủy</div>
+                        <div class="stat-value" id="inactivePackageCount">0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="card mb-4">
             <div class="card-body">
                 <div class="row g-3">
                     <div class="col-md-4">
+                        <label class="form-label">Tìm kiếm</label>
+                        <input class="form-control" id="searchInput" placeholder="Mã gói, khách hàng, SĐT, biển số">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Loại gói</label>
                         <select class="form-select" id="typeFilter">
                             <option value="">Tất cả loại gói</option>
                             <option value="daily">Theo ngày</option>
                             <option value="monthly">Theo tháng</option>
                         </select>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
+                        <label class="form-label">Trạng thái</label>
                         <select class="form-select" id="statusFilter">
                             <option value="">Tất cả trạng thái</option>
                             <option value="active">Đang hoạt động</option>
+                            <option value="expiring_soon">Sắp hết hạn</option>
                             <option value="expired">Hết hạn</option>
+                            <option value="cancelled">Đã hủy</option>
                         </select>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-2 d-flex align-items-end">
                         <button class="btn btn-primary w-100" onclick="loadPackages()">
-                            <i class="bi bi-search"></i> Tìm kiếm
+                            <i class="bi bi-search"></i> Lọc
                         </button>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Packages Table -->
         <div class="card">
             <div class="card-body">
                 <div class="table-responsive">
-                    <table class="table table-hover">
+                    <table class="table table-hover package-table">
                         <thead>
                             <tr>
                                 <th>Mã gói</th>
                                 <th>Khách hàng</th>
-                                <th>Biển số</th>
+                                <th>Xe</th>
                                 <th>Loại gói</th>
+                                <th>Thời hạn</th>
+                                <th>Còn lại</th>
                                 <th>Giá</th>
-                                <th>Ngày bắt đầu</th>
-                                <th>Ngày hết hạn</th>
                                 <th>Trạng thái</th>
+                                <th>Thao tác</th>
                             </tr>
                         </thead>
                         <tbody id="packagesTable">
                             <tr>
-                                <td colspan="8" class="text-center">Đang tải...</td>
+                                <td colspan="9" class="text-center">Đang tải...</td>
                             </tr>
                         </tbody>
                     </table>
@@ -106,70 +187,446 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <div class="modal fade" id="createPackageModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Tạo gói gửi xe</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="createPackageForm">
+                        <div class="mb-3">
+                            <label class="form-label">Khách hàng</label>
+                            <select class="form-select" id="createCustomerSelect" required></select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Xe</label>
+                            <select class="form-select" id="createVehicleSelect" required></select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Loại gói</label>
+                            <select class="form-select" id="createPackageType" required>
+                                <option value="daily">Theo ngày</option>
+                                <option value="monthly">Theo tháng</option>
+                            </select>
+                        </div>
+                        <div class="alert alert-info mb-0" id="createPackagePreview">
+                            Chọn loại gói để xem giá.
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="button" class="btn btn-primary" onclick="createPackage()">Tạo gói</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="renewPackageModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Gia hạn gói</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="renewPackageId">
+                    <div class="mb-3" id="renewPackageInfo"></div>
+                    <label class="form-label">Loại gói gia hạn</label>
+                    <select class="form-select" id="renewPackageType">
+                        <option value="daily">Theo ngày</option>
+                        <option value="monthly">Theo tháng</option>
+                    </select>
+                    <div class="alert alert-info mt-3 mb-0" id="renewPackagePreview"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="button" class="btn btn-primary" onclick="renewPackage()">Xác nhận gia hạn</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="packageDetailModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Chi tiết gói cước</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="packageDetailBody">Đang tải...</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="../assets/vendor/bootstrap/bootstrap.bundle.min.js"></script>
     <script src="../assets/js/api.js"></script>
     <script>
-        let packagesAutoRefresh = null;
+        const state = {
+            packages: [],
+            customers: [],
+            vehicles: [],
+            packageTypes: [],
+            searchTimer: null,
+        };
 
-        async function loadPackages() {
-            const tbody = document.getElementById('packagesTable');
-            
-            try {
-                const type = document.getElementById('typeFilter')?.value || '';
-                const status = document.getElementById('statusFilter')?.value || '';
-                
-                let url = '/packages';
-                const params = [];
-                if (type) params.push(`package_type=${type}`);
-                if (status) params.push(`status=${status}`);
-                if (params.length > 0) url += '?' + params.join('&');
-                
-                console.log('Loading packages from:', url);
-                const result = await api.get(url);
-                console.log('Packages result:', result);
-                
-                if (!result || !result.success) {
-                    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">Lỗi tải dữ liệu. Kiểm tra backend đã chạy chưa.</td></tr>';
-                    return;
-                }
-                
-                if (!result.data || result.data.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="8" class="text-center">Không có dữ liệu</td></tr>';
-                    return;
-                }
-                
-                tbody.innerHTML = result.data.map(pkg => `
-                    <tr>
-                        <td><code>${pkg.package_id}</code></td>
-                        <td>${pkg.customer_name || 'N/A'}</td>
-                        <td><strong>${pkg.plate_number || 'N/A'}</strong></td>
-                        <td><span class="badge bg-info">${getPackageTypeLabel(pkg.package_type)}</span></td>
-                        <td>${formatCurrency(pkg.price)}</td>
-                        <td>${formatDate(pkg.start_date)}</td>
-                        <td>${formatDate(pkg.end_date || pkg.expire_date)}</td>
-                        <td><span class="badge bg-${pkg.status === 'active' ? 'success' : 'danger'}">${pkg.status === 'active' ? 'Hoạt động' : 'Hết hạn'}</span></td>
-                    </tr>
-                `).join('');
-            } catch (error) {
-                console.error('Error loading packages:', error);
-                showToast('Không thể tải danh sách gói cước', 'danger');
-            }
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#039;');
         }
 
         function getPackageTypeLabel(type) {
             const labels = {
-                'per_use': 'Theo lượt',
-                'daily': 'Theo ngày',
-                'monthly': 'Theo tháng'
+                daily: 'Theo ngày',
+                monthly: 'Theo tháng',
             };
-            return labels[type] || type;
+            return labels[type] || type || 'N/A';
+        }
+
+        function getVehicleTypeLabel(type) {
+            const labels = {
+                car: 'Ô tô',
+                motorbike: 'Xe máy',
+            };
+            return labels[type] || type || 'N/A';
+        }
+
+        function getStatusMeta(pkg) {
+            if (pkg.status === 'cancelled') return { label: 'Đã hủy', badge: 'secondary' };
+            if (pkg.status === 'expired') return { label: 'Hết hạn', badge: 'danger' };
+            if (pkg.is_expiring_soon) return { label: 'Sắp hết hạn', badge: 'warning' };
+            if (pkg.is_active || pkg.status === 'active') return { label: 'Đang hoạt động', badge: 'success' };
+            return { label: pkg.status || 'N/A', badge: 'secondary' };
+        }
+
+        function getPackagePrice(type) {
+            return state.packageTypes.find(item => item.type === type)?.price || 0;
+        }
+
+        function setTableLoading(message = 'Đang tải...') {
+            document.getElementById('packagesTable').innerHTML = `
+                <tr><td colspan="9" class="text-center">${escapeHtml(message)}</td></tr>
+            `;
+        }
+
+        async function loadReferenceData() {
+            const [typesResult, customersResult, vehiclesResult] = await Promise.all([
+                api.get('/packages/types'),
+                api.get('/customers?limit=1000'),
+                api.get('/vehicles?limit=1000'),
+            ]);
+
+            state.packageTypes = (typesResult.data || []).filter(item => item.creates_package);
+            state.customers = customersResult.data || [];
+            state.vehicles = vehiclesResult.data || [];
+
+            renderCreateCustomerOptions();
+            updateCreateVehicleOptions();
+            updatePackagePreviews();
+        }
+
+        async function loadPackageSummary() {
+            const result = await api.get('/packages/summary');
+            if (!result?.success) return;
+
+            const data = result.data || {};
+            document.getElementById('activePackageCount').textContent = data.active || 0;
+            document.getElementById('expiringPackageCount').textContent = data.expiring_soon || 0;
+            document.getElementById('inactivePackageCount').textContent = (data.expired || 0) + (data.cancelled || 0);
+            document.getElementById('packageRevenue').textContent = formatCurrency(data.package_revenue || 0);
+        }
+
+        async function loadPackages() {
+            setTableLoading();
+            try {
+                const params = new URLSearchParams();
+                const type = document.getElementById('typeFilter').value;
+                const status = document.getElementById('statusFilter').value;
+                const search = document.getElementById('searchInput').value.trim();
+
+                if (type) params.set('package_type', type);
+                if (status) params.set('status', status);
+                if (search) params.set('search', search);
+
+                const query = params.toString();
+                const result = await api.get(`/packages${query ? `?${query}` : ''}`);
+                if (!result?.success) {
+                    throw new Error(result?.detail || result?.error || 'Không thể tải dữ liệu gói cước');
+                }
+
+                state.packages = result.data || [];
+                renderPackagesTable();
+            } catch (error) {
+                console.error(error);
+                document.getElementById('packagesTable').innerHTML = `
+                    <tr><td colspan="9" class="text-center text-danger">${escapeHtml(error.message || 'Lỗi tải dữ liệu')}</td></tr>
+                `;
+            }
+        }
+
+        function renderPackagesTable() {
+            const tbody = document.getElementById('packagesTable');
+            if (!state.packages.length) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center">Không có gói cước phù hợp</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = state.packages.map(pkg => {
+                const status = getStatusMeta(pkg);
+                const canRenew = pkg.status !== 'cancelled';
+                const canCancel = pkg.status === 'active' || pkg.is_active;
+                return `
+                    <tr>
+                        <td><code>${escapeHtml(pkg.package_id)}</code></td>
+                        <td>
+                            <div class="fw-semibold">${escapeHtml(pkg.customer_name || 'N/A')}</div>
+                            <div class="text-muted small">${escapeHtml(pkg.customer_phone || pkg.customer_id || '')}</div>
+                        </td>
+                        <td>
+                            <div class="fw-semibold">${escapeHtml(pkg.plate_number || 'N/A')}</div>
+                            <div class="text-muted small">${escapeHtml(getVehicleTypeLabel(pkg.vehicle_type))}</div>
+                        </td>
+                        <td><span class="badge bg-info">${escapeHtml(getPackageTypeLabel(pkg.package_type))}</span></td>
+                        <td>
+                            <div>${formatDate(pkg.start_date)}</div>
+                            <div class="text-muted small">đến ${formatDate(pkg.expire_date || pkg.end_date)}</div>
+                        </td>
+                        <td>${formatDaysRemaining(pkg)}</td>
+                        <td>${formatCurrency(pkg.price)}</td>
+                        <td><span class="badge bg-${status.badge}">${status.label}</span></td>
+                        <td>
+                            <div class="action-buttons">
+                                <button class="btn btn-outline-secondary btn-sm" onclick="showPackageDetails('${escapeHtml(pkg.package_id)}')">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                                ${canRenew ? `
+                                    <button class="btn btn-outline-primary btn-sm" onclick="openRenewModal('${escapeHtml(pkg.package_id)}')">
+                                        <i class="bi bi-arrow-repeat"></i> Gia hạn
+                                    </button>
+                                ` : ''}
+                                ${canCancel ? `
+                                    <button class="btn btn-outline-danger btn-sm" onclick="cancelPackage('${escapeHtml(pkg.package_id)}')">
+                                        <i class="bi bi-x-circle"></i> Hủy
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function formatDaysRemaining(pkg) {
+            if (pkg.status === 'cancelled') return '<span class="text-muted">Đã hủy</span>';
+            if (pkg.days_remaining === null || pkg.days_remaining === undefined) return 'N/A';
+            if (pkg.days_remaining <= 0 && pkg.status !== 'active') return '<span class="text-danger">Hết hạn</span>';
+            if (pkg.days_remaining <= 3) return `<span class="text-warning fw-semibold">${pkg.days_remaining} ngày</span>`;
+            return `${pkg.days_remaining} ngày`;
+        }
+
+        function renderCreateCustomerOptions() {
+            const select = document.getElementById('createCustomerSelect');
+            select.innerHTML = `
+                <option value="">Chọn khách hàng</option>
+                ${state.customers
+                    .filter(customer => customer.is_active !== false)
+                    .map(customer => `<option value="${escapeHtml(customer.customer_id)}">${escapeHtml(customer.name)} - ${escapeHtml(customer.phone || customer.customer_id)}</option>`)
+                    .join('')}
+            `;
+        }
+
+        function updateCreateVehicleOptions() {
+            const customerId = document.getElementById('createCustomerSelect').value;
+            const select = document.getElementById('createVehicleSelect');
+            const vehicles = state.vehicles.filter(vehicle => vehicle.is_active !== false && vehicle.customer_id === customerId);
+
+            select.innerHTML = vehicles.length
+                ? vehicles.map(vehicle => `
+                    <option value="${escapeHtml(vehicle.vehicle_id)}">${escapeHtml(vehicle.plate_number)} - ${escapeHtml(getVehicleTypeLabel(vehicle.vehicle_type))}</option>
+                `).join('')
+                : '<option value="">Khách hàng chưa có xe hợp lệ</option>';
+        }
+
+        function updatePackagePreviews() {
+            const createType = document.getElementById('createPackageType').value;
+            document.getElementById('createPackagePreview').innerHTML = `
+                <strong>${escapeHtml(getPackageTypeLabel(createType))}</strong><br>
+                Giá: ${formatCurrency(getPackagePrice(createType))}<br>
+                Hiệu lực: ${createType === 'monthly' ? '30 ngày' : '1 ngày'}
+            `;
+
+            const renewType = document.getElementById('renewPackageType').value;
+            document.getElementById('renewPackagePreview').innerHTML = `
+                Giá gia hạn: <strong>${formatCurrency(getPackagePrice(renewType))}</strong><br>
+                Thời hạn cộng thêm: ${renewType === 'monthly' ? '30 ngày' : '1 ngày'}
+            `;
+        }
+
+        async function createPackage() {
+            const customerId = document.getElementById('createCustomerSelect').value;
+            const vehicleId = document.getElementById('createVehicleSelect').value;
+            const packageType = document.getElementById('createPackageType').value;
+
+            if (!customerId || !vehicleId || !packageType) {
+                showToast('Vui lòng chọn khách hàng, xe và loại gói', 'warning');
+                return;
+            }
+
+            try {
+                const result = await api.post('/packages', {
+                    customer_id: customerId,
+                    vehicle_id: vehicleId,
+                    package_type: packageType,
+                });
+                if (!result?.success) {
+                    throw new Error(result?.detail || result?.error || 'Không thể tạo gói');
+                }
+
+                bootstrap.Modal.getInstance(document.getElementById('createPackageModal'))?.hide();
+                showToast('Đã tạo gói cước');
+                await refreshPackagesPage();
+            } catch (error) {
+                showToast(error.message || 'Lỗi tạo gói', 'danger');
+            }
+        }
+
+        function openRenewModal(packageId) {
+            const pkg = state.packages.find(item => item.package_id === packageId);
+            if (!pkg) return;
+
+            document.getElementById('renewPackageId').value = packageId;
+            document.getElementById('renewPackageType').value = pkg.package_type === 'monthly' ? 'monthly' : 'daily';
+            document.getElementById('renewPackageInfo').innerHTML = `
+                <div class="alert alert-light border mb-0">
+                    <div><strong>${escapeHtml(pkg.package_id)}</strong> - ${escapeHtml(pkg.customer_name)}</div>
+                    <div>Xe: <strong>${escapeHtml(pkg.plate_number)}</strong></div>
+                    <div>Hết hạn hiện tại: ${formatDate(pkg.expire_date || pkg.end_date)}</div>
+                </div>
+            `;
+            updatePackagePreviews();
+            new bootstrap.Modal(document.getElementById('renewPackageModal')).show();
+        }
+
+        async function renewPackage() {
+            const packageId = document.getElementById('renewPackageId').value;
+            const packageType = document.getElementById('renewPackageType').value;
+            if (!packageId) return;
+
+            try {
+                const result = await api.post(`/packages/${encodeURIComponent(packageId)}/renew`, {
+                    package_type: packageType,
+                });
+                if (!result?.success) {
+                    throw new Error(result?.detail || result?.error || 'Không thể gia hạn gói');
+                }
+
+                bootstrap.Modal.getInstance(document.getElementById('renewPackageModal'))?.hide();
+                showToast('Đã gia hạn gói cước');
+                await refreshPackagesPage();
+            } catch (error) {
+                showToast(error.message || 'Lỗi gia hạn gói', 'danger');
+            }
+        }
+
+        async function cancelPackage(packageId) {
+            if (!confirm(`Hủy gói ${packageId}? Gói đã hủy sẽ không được dùng để miễn phí khi xe ra bãi.`)) {
+                return;
+            }
+
+            try {
+                const result = await api.post(`/packages/${encodeURIComponent(packageId)}/cancel`, {});
+                if (!result?.success) {
+                    throw new Error(result?.detail || result?.error || 'Không thể hủy gói');
+                }
+                showToast('Đã hủy gói cước');
+                await refreshPackagesPage();
+            } catch (error) {
+                showToast(error.message || 'Lỗi hủy gói', 'danger');
+            }
+        }
+
+        async function showPackageDetails(packageId) {
+            const body = document.getElementById('packageDetailBody');
+            body.innerHTML = 'Đang tải...';
+            new bootstrap.Modal(document.getElementById('packageDetailModal')).show();
+
+            try {
+                const result = await api.get(`/packages/${encodeURIComponent(packageId)}`);
+                if (!result?.success) {
+                    throw new Error(result?.detail || result?.error || 'Không thể tải chi tiết');
+                }
+
+                const pkg = result.data;
+                const status = getStatusMeta(pkg);
+                body.innerHTML = `
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <div class="text-muted small">Mã gói</div>
+                            <div class="fw-semibold">${escapeHtml(pkg.package_id)}</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">Trạng thái</div>
+                            <span class="badge bg-${status.badge}">${status.label}</span>
+                        </div>
+                        <div class="col-12">
+                            <div class="text-muted small">Khách hàng</div>
+                            <div>${escapeHtml(pkg.customer_name)} - ${escapeHtml(pkg.customer_phone)}</div>
+                        </div>
+                        <div class="col-12">
+                            <div class="text-muted small">Xe</div>
+                            <div>${escapeHtml(pkg.plate_number)} - ${escapeHtml(getVehicleTypeLabel(pkg.vehicle_type))}</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">Loại gói</div>
+                            <div>${escapeHtml(getPackageTypeLabel(pkg.package_type))}</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">Giá</div>
+                            <div>${formatCurrency(pkg.price)}</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">Ngày bắt đầu</div>
+                            <div>${formatDate(pkg.start_date)}</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">Ngày hết hạn</div>
+                            <div>${formatDate(pkg.expire_date || pkg.end_date)}</div>
+                        </div>
+                    </div>
+                `;
+            } catch (error) {
+                body.innerHTML = `<div class="text-danger">${escapeHtml(error.message || 'Lỗi tải chi tiết')}</div>`;
+            }
+        }
+
+        async function refreshPackagesPage() {
+            await Promise.all([loadPackageSummary(), loadPackages()]);
         }
 
         function initPackagesPage() {
-            loadPackages();
-            if (!packagesAutoRefresh) {
-                packagesAutoRefresh = setInterval(loadPackages, 10000);
-            }
+            document.getElementById('searchInput').addEventListener('input', () => {
+                clearTimeout(state.searchTimer);
+                state.searchTimer = setTimeout(loadPackages, 300);
+            });
+            document.getElementById('typeFilter').addEventListener('change', loadPackages);
+            document.getElementById('statusFilter').addEventListener('change', loadPackages);
+            document.getElementById('createCustomerSelect').addEventListener('change', updateCreateVehicleOptions);
+            document.getElementById('createPackageType').addEventListener('change', updatePackagePreviews);
+            document.getElementById('renewPackageType').addEventListener('change', updatePackagePreviews);
+
+            loadReferenceData()
+                .then(refreshPackagesPage)
+                .catch(error => {
+                    console.error(error);
+                    showToast('Không thể tải dữ liệu tham chiếu', 'danger');
+                    setTableLoading('Không thể tải dữ liệu');
+                });
         }
 
         document.addEventListener('DOMContentLoaded', initPackagesPage);

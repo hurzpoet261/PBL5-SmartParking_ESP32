@@ -8,9 +8,11 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import asyncio
 import logging
+from typing import Any, Dict
 
 from app.config import settings
 from app.database.mongodb import MongoDB
+from app.services.gate_ack import gate_ack_update_fields
 from app.services.gate_mqtt import gate_mqtt_publisher
 from app.services.parking_status import publish_parking_status_update
 from app.controllers import (
@@ -33,6 +35,37 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def record_gate_ack(ack: Dict[str, Any]) -> None:
+    command_id = str(ack.get("command_id") or "").strip()
+    if not command_id:
+        logger.warning("[GATE] ACK ignored because command_id is missing")
+        return
+    if MongoDB.db is None:
+        logger.warning("[GATE] ACK ignored because MongoDB is not ready command_id=%s", command_id)
+        return
+
+    result = await MongoDB.db.parking_events.update_one(
+        {"gate_command_id": command_id},
+        {"$set": gate_ack_update_fields(ack)},
+    )
+    if result.matched_count:
+        logger.info("[GATE] ACK recorded command_id=%s", command_id)
+    else:
+        logger.info("[GATE] ACK received before event insert command_id=%s", command_id)
+
+
+def schedule_gate_ack_record(loop: asyncio.AbstractEventLoop, ack: Dict[str, Any]) -> None:
+    future = asyncio.run_coroutine_threadsafe(record_gate_ack(ack), loop)
+
+    def _log_failure(done_future: asyncio.Future) -> None:
+        try:
+            done_future.result()
+        except Exception as exc:
+            logger.warning("[GATE] ACK DB update failed: %s", exc)
+
+    future.add_done_callback(_log_failure)
+
+
 # Lifespan context manager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -40,6 +73,8 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("🚀 Starting Smart Parking API V3.0...")
     await MongoDB.connect_db()
+    loop = asyncio.get_running_loop()
+    gate_mqtt_publisher.set_ack_handler(lambda ack: schedule_gate_ack_record(loop, ack))
     mqtt_ready = await asyncio.to_thread(gate_mqtt_publisher.ensure_connected, 5.0)
     if mqtt_ready:
         logger.info("[MQTT] Backend gate publisher is ready")
@@ -52,6 +87,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("🛑 Shutting down...")
+    gate_mqtt_publisher.set_ack_handler(None)
     gate_mqtt_publisher.close()
     await MongoDB.close_db()
     logger.info("✅ Application stopped")

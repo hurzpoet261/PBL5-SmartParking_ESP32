@@ -54,7 +54,10 @@ reader = MFRC522(spi, Pin(config.RFID_CS_PIN, Pin.OUT), Pin(config.RFID_RST_PIN,
 
 led = Pin(config.LED_PIN, Pin.OUT)
 buzzer = Pin(config.BUZZER_PIN, Pin.OUT)
-servo = PWM(Pin(config.SERVO_PIN), freq=config.SERVO_FREQ)
+ENTRY_SERVO_PIN = getattr(config, "SERVO_ENTRY_PIN", getattr(config, "SERVO_PIN", 14))
+EXIT_SERVO_PIN = getattr(config, "SERVO_EXIT_PIN", 27)
+servo_entry = PWM(Pin(ENTRY_SERVO_PIN), freq=config.SERVO_FREQ)
+servo_exit = PWM(Pin(EXIT_SERVO_PIN), freq=config.SERVO_FREQ)
 
 lcd = None
 if LCD_I2C:
@@ -67,8 +70,8 @@ if LCD_I2C:
             lcd = None
 
 client = None
-gate_is_open = False
-gate_open_at = 0
+gate_open_state = {"entry": False, "exit": False}
+gate_open_at_ms = {"entry": 0, "exit": 0}
 last_uid = None
 last_scan_ms = 0
 last_mqtt_attempt_ms = 0
@@ -107,28 +110,77 @@ def display_ready():
     display_slots()
 
 
-def servo_angle(angle):
+def normalize_gate_action(command=None):
+    action = ""
+    if command:
+        try:
+            action = str(command.get("action") or "").lower()
+        except Exception:
+            action = ""
+    if action == "exit":
+        return "exit"
+    return "entry"
+
+
+def get_gate_servo(action):
+    if action == "exit":
+        return servo_exit
+    return servo_entry
+
+
+def get_gate_pin(action):
+    if action == "exit":
+        return EXIT_SERVO_PIN
+    return ENTRY_SERVO_PIN
+
+
+def get_gate_open_angle(action):
+    if action == "exit":
+        return getattr(config, "SERVO_EXIT_ANGLE_OPEN", config.SERVO_ANGLE_OPEN)
+    return getattr(config, "SERVO_ENTRY_ANGLE_OPEN", config.SERVO_ANGLE_OPEN)
+
+
+def get_gate_close_angle(action):
+    if action == "exit":
+        return getattr(config, "SERVO_EXIT_ANGLE_CLOSE", config.SERVO_ANGLE_CLOSE)
+    return getattr(config, "SERVO_ENTRY_ANGLE_CLOSE", config.SERVO_ANGLE_CLOSE)
+
+
+def any_gate_open():
+    return gate_open_state.get("entry") or gate_open_state.get("exit")
+
+
+def servo_angle(servo_obj, angle):
     duty = int(25 + (angle / 180) * 102)
-    servo.duty(duty)
+    servo_obj.duty(duty)
 
 
-def gate_open():
-    global gate_is_open, gate_open_at
-    log("[GATE] OPEN")
-    servo_angle(config.SERVO_ANGLE_OPEN)
-    gate_is_open = True
-    gate_open_at = time.ticks_ms()
+def gate_open(command=None):
+    action = normalize_gate_action(command)
+    log("[GATE] OPEN action={} pin={}".format(action, get_gate_pin(action)))
+    servo_angle(get_gate_servo(action), get_gate_open_angle(action))
+    gate_open_state[action] = True
+    gate_open_at_ms[action] = time.ticks_ms()
     led.on()
-    display("GATE OPEN", "MQTT OPEN")
+    display("{} OPEN".format(action.upper()), "MQTT OPEN")
+    return action
 
 
-def gate_close():
-    global gate_is_open
-    log("[GATE] CLOSE")
-    servo_angle(config.SERVO_ANGLE_CLOSE)
-    gate_is_open = False
-    led.off()
+def gate_close(action="entry"):
+    action = normalize_gate_action({"action": action})
+    log("[GATE] CLOSE action={} pin={}".format(action, get_gate_pin(action)))
+    servo_angle(get_gate_servo(action), get_gate_close_angle(action))
+    gate_open_state[action] = False
+    if not any_gate_open():
+        led.off()
     display_ready()
+
+
+def close_all_gates():
+    for action in ("entry", "exit"):
+        servo_angle(get_gate_servo(action), get_gate_close_angle(action))
+        gate_open_state[action] = False
+    led.off()
 
 
 def beep(freq, duration_ms):
@@ -200,15 +252,82 @@ def get_client_id():
     return config.MQTT_CLIENT_ID
 
 
+def parse_gate_command(payload_text):
+    if payload_text.upper() == "OPEN":
+        return {"command": "OPEN", "command_id": None}
+
+    if ujson is None:
+        log("[GATE] JSON command ignored because ujson is not available")
+        return None
+
+    try:
+        payload = ujson.loads(payload_text)
+    except Exception as exc:
+        log("[GATE] Invalid command payload: {}".format(exc))
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    command = str(payload.get("command", "")).upper()
+    if command != "OPEN":
+        return None
+    return payload
+
+
+def publish_gate_ack(command, status="opened", error=None, physical_gate=None):
+    global client
+
+    if ujson is None or client is None:
+        return
+
+    command_id = command.get("command_id") if command else None
+    if not command_id:
+        return
+
+    payload = {
+        "schema": "smartparking.gate_ack.v1",
+        "command_id": command_id,
+        "command": "OPEN",
+        "status": status,
+        "device_id": get_client_id(),
+        "gate_id": getattr(config, "GATE_ID", 1),
+        "action": command.get("action") if command else None,
+        "physical_gate": physical_gate or normalize_gate_action(command),
+        "event_id": command.get("event_id") if command else None,
+        "session_id": command.get("session_id") if command else None,
+        "opened_at_ms": time.ticks_ms(),
+    }
+    if error:
+        payload["error"] = str(error)
+
+    try:
+        topic = getattr(config, "MQTT_TOPIC_GATE_ACK", "pbl5/smartparking/gate_ack")
+        client.publish(topic, ujson.dumps(payload).encode())
+        log("[GATE] ACK published command_id={} status={}".format(command_id, status))
+    except Exception as exc:
+        log("[GATE] ACK publish failed: {}".format(exc))
+
+
 def on_mqtt_message(topic, payload):
     topic_text = topic.decode() if isinstance(topic, bytes) else str(topic)
     payload_text = payload.decode().strip() if isinstance(payload, bytes) else str(payload).strip()
 
     log("[MQTT] RX topic={} payload={}".format(topic_text, payload_text))
 
-    if topic_text == config.MQTT_TOPIC_GATE and payload_text.upper() == "OPEN":
-        gate_open()
-        beep_ok()
+    if topic_text == config.MQTT_TOPIC_GATE:
+        command = parse_gate_command(payload_text)
+        if command:
+            try:
+                opened_gate = gate_open(command)
+                beep_ok()
+                publish_gate_ack(command, "opened", physical_gate=opened_gate)
+            except Exception as exc:
+                log("[GATE] OPEN failed: {}".format(exc))
+                beep_error()
+                publish_gate_ack(command, "failed", exc)
+        else:
+            log("[GATE] Ignored unsupported command")
     elif topic_text == config.MQTT_TOPIC_PARKING_STATUS:
         update_parking_status(payload_text)
 
@@ -341,18 +460,22 @@ def read_rfid_uid():
 
 
 def handle_gate_auto_close():
-    if not gate_is_open or not config.GATE_AUTO_CLOSE:
+    if not config.GATE_AUTO_CLOSE:
         return
 
-    elapsed = time.ticks_diff(time.ticks_ms(), gate_open_at)
-    if elapsed >= config.GATE_OPEN_DURATION * 1000:
-        gate_close()
+    now = time.ticks_ms()
+    for action in ("entry", "exit"):
+        if not gate_open_state.get(action):
+            continue
+        elapsed = time.ticks_diff(now, gate_open_at_ms.get(action, 0))
+        if elapsed >= config.GATE_OPEN_DURATION * 1000:
+            gate_close(action)
 
 
 def main():
     global last_uid, last_scan_ms, client
 
-    gate_close()
+    close_all_gates()
     connect_wifi()
     connect_mqtt(force=True)
     display_ready()
@@ -385,7 +508,8 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        gate_close()
-        servo.deinit()
+        close_all_gates()
+        servo_entry.deinit()
+        servo_exit.deinit()
         display("Stopped", "")
         print("Stopped")

@@ -6,6 +6,8 @@ from typing import Optional
 from datetime import datetime
 from enum import Enum
 
+from app.utils.timezone import now_local
+
 
 class SlotStatus(str, Enum):
     """Slot status"""
@@ -24,5 +26,5 @@ class ParkingSlot(BaseModel):
     vehicle_id: Optional[str] = None
     session_id: Optional[str] = None
     slot_type: str = Field("standard", description="standard, vip, disabled")
-    created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=now_local)
+    updated_at: datetime = Field(default_factory=now_local)

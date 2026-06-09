@@ -6,6 +6,8 @@ from typing import Optional
 from datetime import datetime
 from enum import Enum
 
+from app.utils.timezone import now_local
+
 
 class CardStatus(str, Enum):
     """Card status"""
@@ -21,9 +23,9 @@ class RFIDCard(BaseModel):
     customer_id: str
     vehicle_id: str
     status: CardStatus = CardStatus.ACTIVE
-    issued_at: datetime = Field(default_factory=datetime.now)
+    issued_at: datetime = Field(default_factory=now_local)
     expire_at: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=now_local)
     notes: Optional[str] = None
 
 

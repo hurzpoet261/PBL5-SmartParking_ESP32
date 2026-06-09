@@ -1,5 +1,5 @@
 // API Configuration
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+const API_BASE_URL = window.SMART_PARKING_API_BASE_URL || 'http://127.0.0.1:8000/api/v1';
 
 // API Helper
 const api = {
@@ -79,7 +79,12 @@ function formatCurrency(amount) {
 function formatDate(dateString) {
     if (!dateString) return 'N/A';
     try {
-        return new Date(dateString).toLocaleDateString('vi-VN');
+        return new Intl.DateTimeFormat('vi-VN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            timeZone: 'Asia/Ho_Chi_Minh'
+        }).format(new Date(dateString));
     } catch {
         return 'N/A';
     }
@@ -89,7 +94,16 @@ function formatDate(dateString) {
 function formatDateTime(dateString) {
     if (!dateString) return 'N/A';
     try {
-        return new Date(dateString).toLocaleString('vi-VN');
+        return new Intl.DateTimeFormat('vi-VN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+            timeZone: 'Asia/Ho_Chi_Minh'
+        }).format(new Date(dateString));
     } catch {
         return 'N/A';
     }
@@ -127,7 +141,7 @@ function showToast(message, type = 'success') {
 // Check backend connection
 async function checkBackend() {
     try {
-        const response = await fetch('http://localhost:8000/health');
+        const response = await fetch('http://127.0.0.1:8000/health');
         const data = await response.json();
         return data.status === 'healthy';
     } catch {
@@ -146,17 +160,11 @@ function showBackendError() {
         <p>Vui lòng kiểm tra:</p>
         <ol>
             <li>Backend đã chạy chưa: <code>python -m app.main</code></li>
-            <li>Backend chạy tại: <code>http://localhost:8000</code></li>
+            <li>Backend chạy tại: <code>http://127.0.0.1:8000</code></li>
         </ol>
         <button class="btn btn-primary btn-sm" onclick="location.reload()">Thử lại</button>
     `;
     document.body.appendChild(errorDiv);
 }
 
-// Initialize - check backend on page load
-document.addEventListener('DOMContentLoaded', async () => {
-    const isBackendRunning = await checkBackend();
-    if (!isBackendRunning) {
-        showBackendError();
-    }
-});
+// Pages can call checkBackend() explicitly when they need a startup warning.
