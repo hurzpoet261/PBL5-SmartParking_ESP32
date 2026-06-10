@@ -629,7 +629,26 @@ async def create_walk_in_binding(
             "vehicle": existing_vehicle,
         }
 
-    available_slot = await db.parking_slots.find_one({"status": SlotStatus.AVAILABLE.value})
+    available_slot = await db.parking_slots.find_one(
+        {
+            "status": SlotStatus.AVAILABLE.value,
+            "session_id": None,
+            "$and": [
+                {
+                    "$or": [
+                        {"reserved_vehicle_id": None},
+                        {"reserved_vehicle_id": {"$exists": False}},
+                    ]
+                },
+                {
+                    "$or": [
+                        {"reserved_customer_id": None},
+                        {"reserved_customer_id": {"$exists": False}},
+                    ]
+                },
+            ],
+        }
+    )
     if not available_slot:
         return {
             "success": False,
@@ -824,6 +843,143 @@ async def release_walk_in_binding_after_exit(
     }
 
 
+def slot_has_reservation(slot: Optional[Dict[str, Any]]) -> bool:
+    if not slot:
+        return False
+    return bool(slot.get("reserved_vehicle_id") or slot.get("reserved_customer_id"))
+
+
+def build_slot_release_update(slot: Dict[str, Any], dt: datetime) -> Dict[str, Any]:
+    if slot_has_reservation(slot):
+        return {
+            "$set": {
+                "status": SlotStatus.RESERVED.value,
+                "vehicle_id": None,
+                "session_id": None,
+                "updated_at": dt,
+            }
+        }
+
+    return {
+        "$set": {
+            "status": SlotStatus.AVAILABLE.value,
+            "vehicle_id": None,
+            "session_id": None,
+            "updated_at": dt,
+        },
+        "$unset": {
+            "reserved_customer_id": "",
+            "reserved_vehicle_id": "",
+            "reserved_package_id": "",
+            "reserved_at": "",
+        },
+    }
+
+
+async def release_session_slot(
+    db: AsyncIOMotorDatabase,
+    *,
+    slot_id: str,
+    vehicle_id: str,
+    dt: datetime,
+    session_id: Optional[str] = None,
+) -> bool:
+    query: Dict[str, Any] = {"slot_id": slot_id}
+    if session_id:
+        query["session_id"] = session_id
+
+    slot = await db.parking_slots.find_one(query)
+    if not slot:
+        return False
+
+    result = await db.parking_slots.update_one(query, build_slot_release_update(slot, dt))
+    return bool(result.modified_count)
+
+
+async def reserve_entry_slot(
+    db: AsyncIOMotorDatabase,
+    *,
+    card: Dict[str, Any],
+    vehicle: Dict[str, Any],
+    session_id: str,
+    dt: datetime,
+) -> tuple[Optional[Dict[str, Any]], str]:
+    vehicle_id = card["vehicle_id"]
+    fixed_slot_id = str(vehicle.get("fixed_slot_id") or "").strip().upper()
+
+    if fixed_slot_id:
+        slot = await db.parking_slots.find_one_and_update(
+            {
+                "slot_id": fixed_slot_id,
+                "status": {"$in": [SlotStatus.AVAILABLE.value, SlotStatus.RESERVED.value]},
+                "session_id": None,
+                "$or": [
+                    {"reserved_vehicle_id": vehicle_id},
+                    {
+                        "$and": [
+                            {
+                                "$or": [
+                                    {"reserved_vehicle_id": None},
+                                    {"reserved_vehicle_id": {"$exists": False}},
+                                ]
+                            },
+                            {
+                                "$or": [
+                                    {"reserved_customer_id": None},
+                                    {"reserved_customer_id": {"$exists": False}},
+                                ]
+                            },
+                        ]
+                    },
+                ],
+            },
+            {
+                "$set": {
+                    "status": SlotStatus.OCCUPIED.value,
+                    "vehicle_id": vehicle_id,
+                    "session_id": session_id,
+                    "reserved_customer_id": card["customer_id"],
+                    "reserved_vehicle_id": vehicle_id,
+                    "updated_at": dt,
+                }
+            },
+            return_document=ReturnDocument.AFTER,
+        )
+        return slot, "fixed_slot_unavailable"
+
+    slot = await db.parking_slots.find_one_and_update(
+        {
+            "status": SlotStatus.AVAILABLE.value,
+            "session_id": None,
+            "$and": [
+                {
+                    "$or": [
+                        {"reserved_vehicle_id": None},
+                        {"reserved_vehicle_id": {"$exists": False}},
+                    ]
+                },
+                {
+                    "$or": [
+                        {"reserved_customer_id": None},
+                        {"reserved_customer_id": {"$exists": False}},
+                    ]
+                },
+            ],
+        },
+        {
+            "$set": {
+                "status": SlotStatus.OCCUPIED.value,
+                "vehicle_id": vehicle_id,
+                "session_id": session_id,
+                "updated_at": dt,
+            }
+        },
+        sort=[("row", 1), ("col", 1), ("slot_id", 1)],
+        return_document=ReturnDocument.AFTER,
+    )
+    return slot, "parking_full"
+
+
 async def process_entry(
     *,
     db: AsyncIOMotorDatabase,
@@ -841,18 +997,12 @@ async def process_entry(
     session_id = await generate_id(db, "sessions", "S")
 
     slot_started_at = time.perf_counter()
-    available_slot = await db.parking_slots.find_one_and_update(
-        {"status": SlotStatus.AVAILABLE.value},
-        {
-            "$set": {
-                "status": SlotStatus.OCCUPIED.value,
-                "vehicle_id": card["vehicle_id"],
-                "session_id": session_id,
-                "updated_at": dt,
-            }
-        },
-        sort=[("row", 1), ("col", 1), ("slot_id", 1)],
-        return_document=ReturnDocument.AFTER,
+    available_slot, slot_reject_reason = await reserve_entry_slot(
+        db,
+        card=card,
+        vehicle=vehicle,
+        session_id=session_id,
+        dt=dt,
     )
     if processing_metrics:
         set_backend_duration(processing_metrics, "slot_reservation_ms", slot_started_at)
@@ -863,7 +1013,7 @@ async def process_entry(
             card_uid=card["card_uid"],
             gate_id=gate_id,
             capture_batch_id=capture_batch_id,
-            reason="parking_full",
+            reason=slot_reject_reason,
             ocr_plate=ocr_plate,
             ocr_confidence=ocr_confidence,
             expected_plate=normalize_plate(str(vehicle.get("plate_number", ""))),
@@ -901,16 +1051,12 @@ async def process_entry(
             set_backend_duration(processing_metrics, "entry_session_insert_ms", session_insert_started_at)
     except Exception:
         logger.exception("[ACCESS] Failed to create entry session; releasing reserved slot")
-        await db.parking_slots.update_one(
-            {"slot_id": available_slot["slot_id"], "session_id": session_id},
-            {
-                "$set": {
-                    "status": SlotStatus.AVAILABLE.value,
-                    "vehicle_id": None,
-                    "session_id": None,
-                    "updated_at": utcnow(),
-                }
-            },
+        await release_session_slot(
+            db,
+            slot_id=available_slot["slot_id"],
+            vehicle_id=card["vehicle_id"],
+            session_id=session_id,
+            dt=utcnow(),
         )
         raise
 
@@ -936,16 +1082,12 @@ async def process_entry(
             available_slot["slot_id"],
         )
         await db.sessions.delete_one({"session_id": session_id, "status": SessionStatus.IN_PROGRESS.value})
-        await db.parking_slots.update_one(
-            {"slot_id": available_slot["slot_id"], "session_id": session_id},
-            {
-                "$set": {
-                    "status": SlotStatus.AVAILABLE.value,
-                    "vehicle_id": None,
-                    "session_id": None,
-                    "updated_at": utcnow(),
-                }
-            },
+        await release_session_slot(
+            db,
+            slot_id=available_slot["slot_id"],
+            vehicle_id=card["vehicle_id"],
+            session_id=session_id,
+            dt=utcnow(),
         )
 
         if processing_metrics:
@@ -1174,16 +1316,12 @@ async def process_exit(
 
     if active_session.get("slot_id"):
         slot_release_started_at = time.perf_counter()
-        await db.parking_slots.update_one(
-            {"slot_id": active_session["slot_id"]},
-            {
-                "$set": {
-                    "status": SlotStatus.AVAILABLE.value,
-                    "vehicle_id": None,
-                    "session_id": None,
-                    "updated_at": dt,
-                }
-            },
+        await release_session_slot(
+            db,
+            slot_id=active_session["slot_id"],
+            vehicle_id=card["vehicle_id"],
+            session_id=active_session["session_id"],
+            dt=dt,
         )
         if processing_metrics:
             set_backend_duration(processing_metrics, "slot_release_ms", slot_release_started_at)
@@ -1844,16 +1982,12 @@ async def dev_reset_active_session(
 
     slot_id = session.get("slot_id")
     if slot_id:
-        await db.parking_slots.update_one(
-            {"slot_id": slot_id, "session_id": session.get("session_id")},
-            {
-                "$set": {
-                    "status": SlotStatus.AVAILABLE.value,
-                    "vehicle_id": None,
-                    "session_id": None,
-                    "updated_at": now,
-                }
-            },
+        await release_session_slot(
+            db,
+            slot_id=slot_id,
+            vehicle_id=session.get("vehicle_id"),
+            session_id=session.get("session_id"),
+            dt=now,
         )
     await publish_parking_status_update(db)
 
@@ -1913,16 +2047,12 @@ async def dev_cleanup_active_sessions(
 
         slot_id = session.get("slot_id")
         if slot_id:
-            await db.parking_slots.update_one(
-                {"slot_id": slot_id, "session_id": session.get("session_id")},
-                {
-                    "$set": {
-                        "status": SlotStatus.AVAILABLE.value,
-                        "vehicle_id": None,
-                        "session_id": None,
-                        "updated_at": now,
-                    }
-                },
+            await release_session_slot(
+                db,
+                slot_id=slot_id,
+                vehicle_id=session.get("vehicle_id"),
+                session_id=session.get("session_id"),
+                dt=now,
             )
 
         reset_items.append(

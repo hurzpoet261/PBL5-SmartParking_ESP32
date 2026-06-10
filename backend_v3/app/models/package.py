@@ -26,6 +26,7 @@ class Package(BaseModel):
     start_date: datetime = Field(default_factory=now_local)
     expire_date: datetime
     remaining_uses: Optional[int] = None
+    fixed_slot_id: Optional[str] = Field(None, description="Fixed parking slot reserved for monthly package")
     status: str = Field("active", description="active, expired, cancelled")
     created_at: datetime = Field(default_factory=now_local)
     
@@ -49,3 +50,4 @@ class PackageCreate(BaseModel):
     vehicle_id: str
     package_type: PackageType
     remaining_uses: Optional[int] = None
+    fixed_slot_id: Optional[str] = None

@@ -114,10 +114,17 @@ def normalize_gate_action(command=None):
     action = ""
     if command:
         try:
-            action = str(command.get("action") or "").lower()
+            action = str(
+                command.get("action")
+                or command.get("physical_gate")
+                or command.get("gate")
+                or command.get("gate_direction")
+                or command.get("direction")
+                or ""
+            ).lower()
         except Exception:
             action = ""
-    if action == "exit":
+    if action in ("exit", "out", "ra", "gate_out", "cong_ra"):
         return "exit"
     return "entry"
 
@@ -157,8 +164,15 @@ def servo_angle(servo_obj, angle):
 
 def gate_open(command=None):
     action = normalize_gate_action(command)
-    log("[GATE] OPEN action={} pin={}".format(action, get_gate_pin(action)))
-    servo_angle(get_gate_servo(action), get_gate_open_angle(action))
+    open_angle = get_gate_open_angle(action)
+    close_angle = get_gate_close_angle(action)
+    log("[GATE] OPEN action={} pin={} open_angle={} close_angle={}".format(
+        action,
+        get_gate_pin(action),
+        open_angle,
+        close_angle,
+    ))
+    servo_angle(get_gate_servo(action), open_angle)
     gate_open_state[action] = True
     gate_open_at_ms[action] = time.ticks_ms()
     led.on()
@@ -168,8 +182,9 @@ def gate_open(command=None):
 
 def gate_close(action="entry"):
     action = normalize_gate_action({"action": action})
-    log("[GATE] CLOSE action={} pin={}".format(action, get_gate_pin(action)))
-    servo_angle(get_gate_servo(action), get_gate_close_angle(action))
+    close_angle = get_gate_close_angle(action)
+    log("[GATE] CLOSE action={} pin={} close_angle={}".format(action, get_gate_pin(action), close_angle))
+    servo_angle(get_gate_servo(action), close_angle)
     gate_open_state[action] = False
     if not any_gate_open():
         led.off()

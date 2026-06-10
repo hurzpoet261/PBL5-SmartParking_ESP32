@@ -65,6 +65,47 @@ def dump_obstacles(obstacles: List[List[LayoutPoint]]) -> List[List[Dict[str, fl
     return [dump_points(obstacle) for obstacle in obstacles]
 
 
+def slot_has_reservation(slot: Dict[str, Any]) -> bool:
+    return bool(slot.get("reserved_vehicle_id") or slot.get("reserved_customer_id"))
+
+
+async def enrich_slot_reservations(
+    db: AsyncIOMotorDatabase,
+    slots: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    customer_ids = sorted({slot.get("reserved_customer_id") for slot in slots if slot.get("reserved_customer_id")})
+    vehicle_ids = sorted({slot.get("reserved_vehicle_id") for slot in slots if slot.get("reserved_vehicle_id")})
+
+    customers = (
+        await db.customers.find({"customer_id": {"$in": customer_ids}}).to_list(length=len(customer_ids))
+        if customer_ids
+        else []
+    )
+    vehicles = (
+        await db.vehicles.find({"vehicle_id": {"$in": vehicle_ids}}).to_list(length=len(vehicle_ids))
+        if vehicle_ids
+        else []
+    )
+    customers_by_id = {customer.get("customer_id"): customer for customer in customers}
+    vehicles_by_id = {vehicle.get("vehicle_id"): vehicle for vehicle in vehicles}
+
+    enriched = []
+    for slot in slots:
+        serialized = serialize_mongodb_document(slot)
+        serialized["slot_number"] = serialized.get("slot_number") or serialized.get("slot_id")
+
+        reserved_customer = customers_by_id.get(slot.get("reserved_customer_id"))
+        reserved_vehicle = vehicles_by_id.get(slot.get("reserved_vehicle_id"))
+        serialized["is_fixed_slot"] = slot_has_reservation(slot)
+        serialized["reserved_customer_name"] = reserved_customer.get("name") if reserved_customer else None
+        serialized["reserved_customer_phone"] = reserved_customer.get("phone") if reserved_customer else None
+        serialized["reserved_plate_number"] = reserved_vehicle.get("plate_number") if reserved_vehicle else None
+        serialized["reserved_vehicle_type"] = reserved_vehicle.get("vehicle_type") if reserved_vehicle else None
+        enriched.append(serialized)
+
+    return enriched
+
+
 def build_layout_config(payload: GenerateLayoutRequest) -> LayoutConfig:
     slot_type = (payload.config.slot_type or "car").strip().lower()
     defaults = SLOT_TYPE_DEFAULTS.get(slot_type, SLOT_TYPE_DEFAULTS["car"])
@@ -95,11 +136,7 @@ async def get_slots(
 
     slots = await db.parking_slots.find(query).sort([("row", 1), ("col", 1)]).to_list(length=1000)
 
-    normalized_slots = []
-    for slot in slots:
-        serialized = serialize_mongodb_document(slot)
-        serialized["slot_number"] = serialized.get("slot_number") or serialized.get("slot_id")
-        normalized_slots.append(serialized)
+    normalized_slots = await enrich_slot_reservations(db, slots)
 
     return {
         "success": True,
@@ -113,24 +150,19 @@ async def get_parking_map(db: AsyncIOMotorDatabase = Depends(get_database)):
     """Get parking map layout"""
     slots = await db.parking_slots.find().sort([("row", 1), ("col", 1)]).to_list(length=1000)
 
-    serialized_slots = []
+    serialized_slots = await enrich_slot_reservations(db, slots)
     map_data = {}
-    for slot in slots:
-        serialized = serialize_mongodb_document(slot)
-        serialized["slot_number"] = serialized.get("slot_number") or serialized.get("slot_id")
-
+    for slot, serialized in zip(slots, serialized_slots):
         row = slot.get("row")
         if row is not None:
             if row not in map_data:
                 map_data[row] = []
             map_data[row].append(serialized)
 
-        serialized_slots.append(serialized)
-
     total_slots = len(slots)
-    available = len([s for s in slots if s.get("status") == "available"])
+    available = len([s for s in slots if s.get("status") == "available" and not slot_has_reservation(s)])
     occupied = len([s for s in slots if s.get("status") == "occupied"])
-    reserved = len([s for s in slots if s.get("status") == "reserved"])
+    reserved = len([s for s in slots if s.get("status") == "reserved" or (s.get("status") == "available" and slot_has_reservation(s))])
     maintenance = len([s for s in slots if s.get("status") == "maintenance"])
     parking_lot_id = (slots[0].get("parking_lot_id") if slots else None) or "LOT1"
     area_id = (slots[0].get("area_id") if slots else None) or "MAIN"
@@ -205,27 +237,52 @@ async def confirm_layout(
             detail="Layout already exists. Set replace_existing=true to replace non-occupied slots.",
         )
 
-    occupied_filter = {
+    protected_filter = {
         "$and": [
             lot_filter,
             {
                 "$or": [
                     {"status": "occupied"},
+                    {"status": "reserved"},
                     {"session_id": {"$ne": None}},
+                    {
+                        "$and": [
+                            {"reserved_vehicle_id": {"$exists": True}},
+                            {"reserved_vehicle_id": {"$ne": None}},
+                        ]
+                    },
+                    {
+                        "$and": [
+                            {"reserved_customer_id": {"$exists": True}},
+                            {"reserved_customer_id": {"$ne": None}},
+                        ]
+                    },
                 ]
             },
         ]
     }
-    occupied_slots = await db.parking_slots.find(occupied_filter).to_list(length=10000)
-    occupied_ids = {slot.get("slot_id") for slot in occupied_slots if slot.get("slot_id")}
+    protected_slots = await db.parking_slots.find(protected_filter).to_list(length=10000)
+    protected_ids = {slot.get("slot_id") for slot in protected_slots if slot.get("slot_id")}
 
     deleted_count = 0
     if payload.replace_existing:
         delete_filter = {
             "$and": [
                 lot_filter,
-                {"status": {"$ne": "occupied"}},
+                {"status": {"$nin": ["occupied", "reserved"]}},
                 {"session_id": None},
+                {
+                    "$or": [
+                        {"reserved_vehicle_id": None},
+                        {"reserved_vehicle_id": {"$exists": False}},
+                    ]
+                },
+                {
+                    "$or": [
+                        {"reserved_customer_id": None},
+                        {"reserved_customer_id": {"$exists": False}},
+                    ]
+                },
             ]
         }
         delete_result = await db.parking_slots.delete_many(delete_filter)
@@ -249,7 +306,7 @@ async def confirm_layout(
             "confirmed_at": dt,
         }
 
-    used_ids = set(occupied_ids)
+    used_ids = set(protected_ids)
     docs = []
     for index, slot in enumerate(payload.generated_slots, start=1):
         base_code = str(
@@ -315,7 +372,8 @@ async def confirm_layout(
         "message": f"Saved {len(docs)} generated slots",
         "saved": len(docs),
         "deleted": deleted_count,
-        "preserved_occupied": len(occupied_slots),
+        "preserved_occupied": len([slot for slot in protected_slots if slot.get("status") == "occupied"]),
+        "preserved_reserved": len([slot for slot in protected_slots if slot.get("status") == "reserved" or slot.get("reserved_vehicle_id")]),
         "layout_metadata_saved": bool(layout_metadata),
         "layout_metadata": layout_metadata,
         "data": serialize_list(docs),
@@ -330,8 +388,7 @@ async def get_slot_detail(slot_id: str, db: AsyncIOMotorDatabase = Depends(get_d
     if not slot:
         raise HTTPException(status_code=404, detail="Slot not found")
 
-    slot_data = serialize_mongodb_document(slot)
-    slot_data["slot_number"] = slot_data.get("slot_number") or slot_data.get("slot_id")
+    slot_data = (await enrich_slot_reservations(db, [slot]))[0]
 
     if slot.get("session_id"):
         session = await db.sessions.find_one({"session_id": slot["session_id"]})

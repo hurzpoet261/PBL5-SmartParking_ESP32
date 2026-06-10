@@ -117,6 +117,7 @@ function renderLegacyGrid(slots, warning = '') {
             <div class="parking-slot ${escapeHtml(slot.status)}" data-slot-id="${escapeHtml(slot.slot_id)}">
                 <div><i class="bi bi-car-front-fill"></i></div>
                 <div>${escapeHtml(slot.slot_number || slot.slot_id)}</div>
+                ${slot.is_fixed_slot ? '<div class="slot-fixed-marker"><i class="bi bi-pin-angle-fill"></i></div>' : ''}
             </div>
         `).join('')}
     `;
@@ -162,10 +163,11 @@ function renderPolygonLayout(slots, layout = null) {
                     const center = getSlotCenter(slot);
                     return `
                         <g class="layout-slot ${escapeHtml(slot.status)}"
+                           data-fixed-slot="${slot.is_fixed_slot ? 'true' : 'false'}"
                            data-slot-id="${escapeHtml(slot.slot_id)}"
                            tabindex="0"
                            role="button"
-                           aria-label="Slot ${escapeHtml(slot.slot_number || slot.slot_id)}">
+                           aria-label="Slot ${escapeHtml(slot.slot_number || slot.slot_id)}${slot.is_fixed_slot ? ' fixed' : ''}">
                             <polygon points="${polygonPointString(slot.points)}"></polygon>
                             <text class="layout-slot-label"
                                   x="${center.x}"
@@ -173,6 +175,14 @@ function renderPolygonLayout(slots, layout = null) {
                                   font-size="${labelSize}">
                                 ${escapeHtml(slot.slot_number || slot.slot_id)}
                             </text>
+                            ${slot.is_fixed_slot ? `
+                                <text class="layout-slot-fixed-label"
+                                      x="${center.x}"
+                                      y="${center.y + labelSize + 5}"
+                                      font-size="${Math.max(labelSize - 2, 7)}">
+                                    FIX
+                                </text>
+                            ` : ''}
                         </g>
                     `;
                 }).join('')}
@@ -263,6 +273,19 @@ async function showSlotDetails(slotId) {
                     <strong>Khách hàng:</strong> ${escapeHtml(slot.current_session.customer_name)}<br>
                     <strong>Thời gian vào:</strong> ${formatDateTime(slot.current_session.check_in_time)}<br>
                     <strong>Thời gian đỗ:</strong> ${calculateDuration(slot.current_session.check_in_time)}
+                </div>
+            `;
+        }
+
+        if (slot.is_fixed_slot) {
+            html += `
+                <hr>
+                <h6>Chỗ cố định:</h6>
+                <div>
+                    <strong>Biển số được giữ:</strong> ${escapeHtml(slot.reserved_plate_number || 'N/A')}<br>
+                    <strong>Khách hàng:</strong> ${escapeHtml(slot.reserved_customer_name || 'N/A')}<br>
+                    <strong>SĐT:</strong> ${escapeHtml(slot.reserved_customer_phone || 'N/A')}<br>
+                    <strong>Mã xe:</strong> ${escapeHtml(slot.reserved_vehicle_id || 'N/A')}
                 </div>
             `;
         }

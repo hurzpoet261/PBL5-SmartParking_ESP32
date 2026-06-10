@@ -25,6 +25,10 @@ class ParkingSlot(BaseModel):
     status: SlotStatus = SlotStatus.AVAILABLE
     vehicle_id: Optional[str] = None
     session_id: Optional[str] = None
+    reserved_customer_id: Optional[str] = None
+    reserved_vehicle_id: Optional[str] = None
+    reserved_package_id: Optional[str] = None
+    reserved_at: Optional[datetime] = None
     slot_type: str = Field("standard", description="standard, vip, disabled")
     created_at: datetime = Field(default_factory=now_local)
     updated_at: datetime = Field(default_factory=now_local)

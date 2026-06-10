@@ -1,15 +1,51 @@
 // API Configuration
 const API_BASE_URL = window.SMART_PARKING_API_BASE_URL || 'http://127.0.0.1:8000/api/v1';
 
+function formatApiDetail(detail) {
+    if (Array.isArray(detail)) {
+        return detail
+            .map(item => item?.msg || item?.message || JSON.stringify(item))
+            .join('; ');
+    }
+    if (detail && typeof detail === 'object') {
+        return detail.message || JSON.stringify(detail);
+    }
+    return detail || null;
+}
+
+function normalizeApiResult(response, result) {
+    const normalized = result && typeof result === 'object' ? result : {};
+    const detailMessage = formatApiDetail(normalized.detail);
+    if (!response.ok || normalized.success === false) {
+        normalized.success = false;
+        normalized.error = normalized.error || detailMessage || response.statusText || 'Request failed';
+    }
+    return normalized;
+}
+
+async function readApiResponse(response) {
+    const text = await response.text();
+    if (!text) return {};
+    try {
+        return JSON.parse(text);
+    } catch {
+        return {
+            success: false,
+            error: text.slice(0, 300),
+        };
+    }
+}
+
 // API Helper
 const api = {
     async get(endpoint) {
         try {
             console.log(`API GET: ${API_BASE_URL}${endpoint}`);
             const response = await fetch(`${API_BASE_URL}${endpoint}`);
-            const data = await response.json();
-            console.log(`API Response:`, data);
-            return data;
+            const responseData = await readApiResponse(response);
+            const result = normalizeApiResult(response, responseData);
+            console.log(`API Response:`, result);
+            return result;
         } catch (error) {
             console.error('API GET Error:', error);
             return { success: false, error: error.message };
@@ -24,7 +60,8 @@ const api = {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
             });
-            const result = await response.json();
+            const responseData = await readApiResponse(response);
+            const result = normalizeApiResult(response, responseData);
             console.log(`API Response:`, result);
             return result;
         } catch (error) {
@@ -41,7 +78,8 @@ const api = {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
             });
-            const result = await response.json();
+            const responseData = await readApiResponse(response);
+            const result = normalizeApiResult(response, responseData);
             console.log(`API Response:`, result);
             return result;
         } catch (error) {
@@ -56,7 +94,8 @@ const api = {
             const response = await fetch(`${API_BASE_URL}${endpoint}`, {
                 method: 'DELETE'
             });
-            const result = await response.json();
+            const data = await readApiResponse(response);
+            const result = normalizeApiResult(response, data);
             console.log(`API Response:`, result);
             return result;
         } catch (error) {

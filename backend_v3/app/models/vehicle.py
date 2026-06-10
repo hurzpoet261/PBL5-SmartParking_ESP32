@@ -26,6 +26,8 @@ class Vehicle(BaseModel):
     brand: Optional[str] = Field(None, max_length=50)
     model: Optional[str] = Field(None, max_length=50)
     color: Optional[str] = Field(None, max_length=30)
+    fixed_slot_id: Optional[str] = Field(None, description="Reserved fixed parking slot for monthly package")
+    fixed_slot_assigned_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=now_local)
     updated_at: datetime = Field(default_factory=now_local)
     is_active: bool = Field(True)
@@ -52,6 +54,7 @@ class VehicleCreate(BaseModel):
     brand: Optional[str] = None
     model: Optional[str] = None
     color: Optional[str] = None
+    fixed_slot_id: Optional[str] = None
 
 
 class VehicleUpdate(BaseModel):
@@ -61,4 +64,5 @@ class VehicleUpdate(BaseModel):
     brand: Optional[str] = None
     model: Optional[str] = None
     color: Optional[str] = None
+    fixed_slot_id: Optional[str] = None
     is_active: Optional[bool] = None

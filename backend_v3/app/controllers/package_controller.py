@@ -11,10 +11,13 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel
+from pymongo import ReturnDocument
 
 from app.database import get_database
 from app.models.package import Package, PackageCreate, PackageType
+from app.models.parking_slot import SlotStatus
 from app.services.fee_calculator import FeeCalculator
+from app.services.parking_status import publish_parking_status_update
 from app.utils.id_generator import generate_id
 from app.utils.serializers import serialize_list, serialize_mongodb_document
 from app.utils.timezone import now_local
@@ -29,23 +32,203 @@ class PackageRenewRequest(BaseModel):
     package_type: Optional[PackageType] = None
 
 
+def normalize_fixed_slot_id(value: object) -> Optional[str]:
+    slot_id = str(value or "").strip().upper()
+    return slot_id or None
+
+
+def slot_reservation_clear_update(dt) -> Dict[str, Any]:
+    return {
+        "$set": {
+            "status": SlotStatus.AVAILABLE.value,
+            "vehicle_id": None,
+            "session_id": None,
+            "updated_at": dt,
+        },
+        "$unset": {
+            "reserved_customer_id": "",
+            "reserved_vehicle_id": "",
+            "reserved_package_id": "",
+            "reserved_at": "",
+        },
+    }
+
+
+async def reserve_fixed_slot_for_package(
+    db: AsyncIOMotorDatabase,
+    *,
+    customer_id: str,
+    vehicle_id: str,
+    package_id: str,
+    fixed_slot_id: str,
+    dt,
+) -> Dict[str, Any]:
+    existing_reservation = await db.parking_slots.find_one(
+        {
+            "slot_id": fixed_slot_id,
+            "$or": [
+                {
+                    "$and": [
+                        {"reserved_vehicle_id": {"$exists": True}},
+                        {"reserved_vehicle_id": {"$ne": None}},
+                        {"reserved_vehicle_id": {"$ne": vehicle_id}},
+                    ]
+                },
+                {
+                    "$and": [
+                        {"reserved_customer_id": {"$exists": True}},
+                        {"reserved_customer_id": {"$ne": None}},
+                        {"reserved_customer_id": {"$ne": customer_id}},
+                    ]
+                },
+            ],
+        }
+    )
+    if existing_reservation:
+        raise HTTPException(status_code=400, detail="Selected parking slot is already reserved for another vehicle")
+
+    slot = await db.parking_slots.find_one_and_update(
+        {
+            "slot_id": fixed_slot_id,
+            "status": {"$in": [SlotStatus.AVAILABLE.value, SlotStatus.RESERVED.value]},
+            "session_id": None,
+            "$or": [
+                {"reserved_vehicle_id": vehicle_id},
+                {
+                    "$and": [
+                        {
+                            "$or": [
+                                {"reserved_vehicle_id": None},
+                                {"reserved_vehicle_id": {"$exists": False}},
+                            ]
+                        },
+                        {
+                            "$or": [
+                                {"reserved_customer_id": None},
+                                {"reserved_customer_id": {"$exists": False}},
+                            ]
+                        },
+                    ]
+                },
+            ],
+        },
+        {
+            "$set": {
+                "status": SlotStatus.RESERVED.value,
+                "vehicle_id": None,
+                "session_id": None,
+                "reserved_customer_id": customer_id,
+                "reserved_vehicle_id": vehicle_id,
+                "reserved_package_id": package_id,
+                "reserved_at": dt,
+                "updated_at": dt,
+            }
+        },
+        return_document=ReturnDocument.AFTER,
+    )
+    if not slot:
+        raise HTTPException(status_code=400, detail="Selected parking slot is not available for fixed monthly assignment")
+
+    await db.vehicles.update_one(
+        {"vehicle_id": vehicle_id, "customer_id": customer_id},
+        {
+            "$set": {
+                "fixed_slot_id": fixed_slot_id,
+                "fixed_slot_assigned_at": dt,
+                "updated_at": dt,
+            }
+        },
+    )
+    return slot
+
+
+async def release_fixed_slot_reservation(
+    db: AsyncIOMotorDatabase,
+    *,
+    customer_id: str,
+    vehicle_id: str,
+    fixed_slot_id: Optional[str],
+    dt,
+) -> bool:
+    fixed_slot_id = normalize_fixed_slot_id(fixed_slot_id)
+    if not fixed_slot_id:
+        return False
+
+    slot = await db.parking_slots.find_one({"slot_id": fixed_slot_id, "reserved_vehicle_id": vehicle_id})
+    if not slot:
+        await db.vehicles.update_one(
+            {"vehicle_id": vehicle_id, "fixed_slot_id": fixed_slot_id},
+            {"$unset": {"fixed_slot_id": "", "fixed_slot_assigned_at": ""}, "$set": {"updated_at": dt}},
+        )
+        return False
+
+    if slot.get("session_id"):
+        result = await db.parking_slots.update_one(
+            {"slot_id": fixed_slot_id, "reserved_vehicle_id": vehicle_id},
+            {
+                "$set": {"updated_at": dt},
+                "$unset": {
+                    "reserved_customer_id": "",
+                    "reserved_vehicle_id": "",
+                    "reserved_package_id": "",
+                    "reserved_at": "",
+                },
+            },
+        )
+    else:
+        result = await db.parking_slots.update_one(
+            {"slot_id": fixed_slot_id, "reserved_vehicle_id": vehicle_id},
+            slot_reservation_clear_update(dt),
+        )
+
+    await db.vehicles.update_one(
+        {"vehicle_id": vehicle_id, "customer_id": customer_id, "fixed_slot_id": fixed_slot_id},
+        {"$unset": {"fixed_slot_id": "", "fixed_slot_assigned_at": ""}, "$set": {"updated_at": dt}},
+    )
+    return bool(result.modified_count)
+
+
 async def sync_expired_packages(db: AsyncIOMotorDatabase) -> int:
     """Mark active packages as expired when their expire_date has passed."""
+
+    dt = now_local()
+    expiring_packages = await db.packages.find(
+        {
+            "status": "active",
+            "package_type": {"$in": STORED_PACKAGE_TYPES},
+            "expire_date": {"$lte": dt},
+        }
+    ).to_list(length=1000)
 
     result = await db.packages.update_many(
         {
             "status": "active",
             "package_type": {"$in": STORED_PACKAGE_TYPES},
-            "expire_date": {"$lte": now_local()},
+            "expire_date": {"$lte": dt},
         },
-        {"$set": {"status": "expired", "updated_at": now_local()}},
+        {"$set": {"status": "expired", "updated_at": dt}},
     )
+
+    released_count = 0
+    for package in expiring_packages:
+        if await release_fixed_slot_reservation(
+            db,
+            customer_id=package.get("customer_id"),
+            vehicle_id=package.get("vehicle_id"),
+            fixed_slot_id=package.get("fixed_slot_id"),
+            dt=dt,
+        ):
+            released_count += 1
+    if released_count:
+        await publish_parking_status_update(db)
+
     return result.modified_count
 
 
 async def enrich_packages(db: AsyncIOMotorDatabase, packages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     customer_ids = sorted({package.get("customer_id") for package in packages if package.get("customer_id")})
     vehicle_ids = sorted({package.get("vehicle_id") for package in packages if package.get("vehicle_id")})
+    fixed_slot_ids = sorted({package.get("fixed_slot_id") for package in packages if package.get("fixed_slot_id")})
 
     customers = (
         await db.customers.find({"customer_id": {"$in": customer_ids}}).to_list(length=len(customer_ids))
@@ -57,14 +240,21 @@ async def enrich_packages(db: AsyncIOMotorDatabase, packages: List[Dict[str, Any
         if vehicle_ids
         else []
     )
+    slots = (
+        await db.parking_slots.find({"slot_id": {"$in": fixed_slot_ids}}).to_list(length=len(fixed_slot_ids))
+        if fixed_slot_ids
+        else []
+    )
     customers_by_id = {customer.get("customer_id"): customer for customer in customers}
     vehicles_by_id = {vehicle.get("vehicle_id"): vehicle for vehicle in vehicles}
+    slots_by_id = {slot.get("slot_id"): slot for slot in slots}
     dt = now_local()
 
     enriched_packages = []
     for package in packages:
         customer = customers_by_id.get(package.get("customer_id"))
         vehicle = vehicles_by_id.get(package.get("vehicle_id"))
+        fixed_slot = slots_by_id.get(package.get("fixed_slot_id"))
         expire_date = package.get("expire_date")
         is_active = package.get("status") == "active" and bool(expire_date and expire_date > dt)
         days_remaining = None
@@ -78,6 +268,8 @@ async def enrich_packages(db: AsyncIOMotorDatabase, packages: List[Dict[str, Any
                 "customer_phone": customer.get("phone") if customer else "N/A",
                 "plate_number": vehicle.get("plate_number") if vehicle else "N/A",
                 "vehicle_type": vehicle.get("vehicle_type") if vehicle else "N/A",
+                "fixed_slot_id": package.get("fixed_slot_id"),
+                "fixed_slot_status": fixed_slot.get("status") if fixed_slot else None,
                 "end_date": package.get("expire_date"),
                 "is_active": is_active,
                 "days_remaining": days_remaining,
@@ -100,6 +292,7 @@ def package_matches_search(package: Dict[str, Any], search: str) -> bool:
         package.get("customer_phone"),
         package.get("vehicle_id"),
         package.get("plate_number"),
+        package.get("fixed_slot_id"),
     ]
     return any(keyword in str(value or "").lower() for value in searchable)
 
@@ -228,10 +421,24 @@ async def create_package(package: PackageCreate, db: AsyncIOMotorDatabase = Depe
         raise HTTPException(status_code=400, detail="Vehicle already has an active package")
 
     package_id = await generate_id(db, "packages", "P")
+    fixed_slot_id = normalize_fixed_slot_id(package.fixed_slot_id)
+    if fixed_slot_id and package.package_type != PackageType.MONTHLY:
+        raise HTTPException(status_code=400, detail="Fixed parking slot can only be assigned to monthly package")
 
     price = FeeCalculator.get_package_price(package.package_type)
     start_date = now_local()
     expire_date = Package.calculate_expire_date(package.package_type, start_date)
+
+    reserved_slot = None
+    if fixed_slot_id:
+        reserved_slot = await reserve_fixed_slot_for_package(
+            db,
+            customer_id=package.customer_id,
+            vehicle_id=package.vehicle_id,
+            package_id=package_id,
+            fixed_slot_id=fixed_slot_id,
+            dt=start_date,
+        )
 
     new_package = {
         "package_id": package_id,
@@ -246,23 +453,40 @@ async def create_package(package: PackageCreate, db: AsyncIOMotorDatabase = Depe
         "created_at": start_date,
         "updated_at": start_date,
     }
+    if fixed_slot_id:
+        new_package["fixed_slot_id"] = fixed_slot_id
 
-    await db.packages.insert_one(new_package)
+    try:
+        await db.packages.insert_one(new_package)
 
-    transaction_id = await generate_id(db, "transactions", "T")
-    await db.transactions.insert_one(
-        {
-            "transaction_id": transaction_id,
-            "customer_id": package.customer_id,
-            "transaction_type": "package_purchase",
-            "amount": price,
-            "package_id": package_id,
-            "vehicle_id": package.vehicle_id,
-            "payment_method": "cash",
-            "description": f"Package purchase - {package.package_type.value}",
-            "created_at": start_date,
-        }
-    )
+        transaction_id = await generate_id(db, "transactions", "T")
+        await db.transactions.insert_one(
+            {
+                "transaction_id": transaction_id,
+                "customer_id": package.customer_id,
+                "transaction_type": "package_purchase",
+                "amount": price,
+                "package_id": package_id,
+                "vehicle_id": package.vehicle_id,
+                "payment_method": "cash",
+                "description": f"Package purchase - {package.package_type.value}",
+                "created_at": start_date,
+            }
+        )
+    except Exception:
+        await db.packages.delete_one({"package_id": package_id})
+        if reserved_slot:
+            await release_fixed_slot_reservation(
+                db,
+                customer_id=package.customer_id,
+                vehicle_id=package.vehicle_id,
+                fixed_slot_id=fixed_slot_id,
+                dt=now_local(),
+            )
+        raise
+
+    if fixed_slot_id:
+        await publish_parking_status_update(db)
 
     return {
         "success": True,
@@ -363,20 +587,33 @@ async def renew_package(
     new_expire_date = Package.calculate_expire_date(package_type, start_for_extend)
     price = FeeCalculator.get_package_price(package_type)
 
-    await db.packages.update_one(
-        {"package_id": package_id},
-        {
-            "$set": {
-                "package_type": package_type.value,
-                "price": price,
-                "expire_date": new_expire_date,
-                "status": "active",
-                "updated_at": dt,
-                "last_renewed_at": dt,
-            },
-            "$inc": {"renewal_count": 1},
+    package_update: Dict[str, Any] = {
+        "$set": {
+            "package_type": package_type.value,
+            "price": price,
+            "expire_date": new_expire_date,
+            "status": "active",
+            "updated_at": dt,
+            "last_renewed_at": dt,
         },
-    )
+        "$inc": {"renewal_count": 1},
+    }
+    release_fixed_slot = package_type != PackageType.MONTHLY and bool(existing.get("fixed_slot_id"))
+    if release_fixed_slot:
+        package_update["$unset"] = {"fixed_slot_id": ""}
+
+    await db.packages.update_one({"package_id": package_id}, package_update)
+
+    if release_fixed_slot:
+        released = await release_fixed_slot_reservation(
+            db,
+            customer_id=existing.get("customer_id"),
+            vehicle_id=existing.get("vehicle_id"),
+            fixed_slot_id=existing.get("fixed_slot_id"),
+            dt=dt,
+        )
+        if released:
+            await publish_parking_status_update(db)
 
     transaction_id = await generate_id(db, "transactions", "T")
     await db.transactions.insert_one(
@@ -434,6 +671,16 @@ async def cancel_package(package_id: str, db: AsyncIOMotorDatabase = Depends(get
             }
         },
     )
+
+    released = await release_fixed_slot_reservation(
+        db,
+        customer_id=existing.get("customer_id"),
+        vehicle_id=existing.get("vehicle_id"),
+        fixed_slot_id=existing.get("fixed_slot_id"),
+        dt=dt,
+    )
+    if released:
+        await publish_parking_status_update(db)
 
     return {
         "success": True,

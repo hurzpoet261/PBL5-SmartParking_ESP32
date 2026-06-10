@@ -78,6 +78,7 @@ class MongoDB:
             await cls.db.vehicles.create_index([("plate_number", ASCENDING)], unique=True)
             await cls.db.vehicles.create_index([("customer_id", ASCENDING)])
             await cls.db.vehicles.create_index([("vehicle_type", ASCENDING)])
+            await cls.db.vehicles.create_index([("fixed_slot_id", ASCENDING)], sparse=True)
             
             # RFID Cards indexes
             await cls.db.rfid_cards.create_index([("card_uid", ASCENDING)], unique=True)
@@ -96,6 +97,8 @@ class MongoDB:
             # Parking Slots indexes
             await cls.db.parking_slots.create_index([("slot_id", ASCENDING)], unique=True)
             await cls.db.parking_slots.create_index([("status", ASCENDING)])
+            await cls.db.parking_slots.create_index([("reserved_vehicle_id", ASCENDING)], sparse=True)
+            await cls.db.parking_slots.create_index([("reserved_customer_id", ASCENDING)], sparse=True)
             await cls.db.parking_slots.create_index([("parking_lot_id", ASCENDING), ("row", ASCENDING), ("col", ASCENDING)])
 
             # Parking layout metadata indexes
@@ -112,6 +115,7 @@ class MongoDB:
             await cls.db.packages.create_index([("status", ASCENDING), ("created_at", DESCENDING)])
             await cls.db.packages.create_index([("customer_id", ASCENDING), ("created_at", DESCENDING)])
             await cls.db.packages.create_index([("vehicle_id", ASCENDING), ("status", ASCENDING), ("expire_date", ASCENDING)])
+            await cls.db.packages.create_index([("fixed_slot_id", ASCENDING)], sparse=True)
             
             # Transactions indexes
             await cls.db.transactions.create_index([("transaction_id", ASCENDING)], unique=True)

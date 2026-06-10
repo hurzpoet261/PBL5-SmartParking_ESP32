@@ -17,9 +17,52 @@ logger = logging.getLogger(__name__)
 
 async def build_parking_status(db: AsyncIOMotorDatabase) -> Dict[str, Any]:
     total = await db.parking_slots.count_documents({})
-    available = await db.parking_slots.count_documents({"status": "available"})
+    available = await db.parking_slots.count_documents(
+        {
+            "status": "available",
+            "$or": [
+                {"reserved_vehicle_id": None},
+                {"reserved_vehicle_id": {"$exists": False}},
+            ],
+            "$and": [
+                {
+                    "$or": [
+                        {"reserved_customer_id": None},
+                        {"reserved_customer_id": {"$exists": False}},
+                    ]
+                }
+            ],
+        }
+    )
     occupied = await db.parking_slots.count_documents({"status": "occupied"})
-    reserved = await db.parking_slots.count_documents({"status": "reserved"})
+    reserved = await db.parking_slots.count_documents(
+        {
+            "$or": [
+                {"status": "reserved"},
+                {
+                    "$and": [
+                        {"status": "available"},
+                        {
+                            "$or": [
+                                {
+                                    "$and": [
+                                        {"reserved_vehicle_id": {"$exists": True}},
+                                        {"reserved_vehicle_id": {"$ne": None}},
+                                    ]
+                                },
+                                {
+                                    "$and": [
+                                        {"reserved_customer_id": {"$exists": True}},
+                                        {"reserved_customer_id": {"$ne": None}},
+                                    ]
+                                },
+                            ]
+                        },
+                    ]
+                },
+            ]
+        }
+    )
     maintenance = await db.parking_slots.count_documents({"status": "maintenance"})
 
     return {

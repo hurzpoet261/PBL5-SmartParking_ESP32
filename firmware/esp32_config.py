@@ -31,6 +31,7 @@ MQTT_KEEPALIVE = 60
 MQTT_CLIENT_ID = "esp32-gate-01"
 MQTT_TOPIC_RFID = "pbl5/smartparking/rfid_scanned"
 MQTT_TOPIC_GATE = "pbl5/smartparking/gate"
+MQTT_TOPIC_GATE_ACK = "pbl5/smartparking/gate_ack"
 MQTT_TOPIC_PARKING_STATUS = "pbl5/smartparking/parking_status"
 MQTT_RECONNECT_DELAY = 5
 
@@ -56,10 +57,16 @@ RFID_RST_PIN = 4
 RFID_SPI_BAUDRATE = 1_000_000
 
 # Servo Motor (Gate Control)
-SERVO_PIN = 14
+SERVO_ENTRY_PIN = 14                 # Servo cong vao
+SERVO_EXIT_PIN = 27                  # Servo cong ra
+SERVO_PIN = SERVO_ENTRY_PIN          # Backward compatibility for legacy firmware
 SERVO_FREQ = 50
 SERVO_ANGLE_OPEN = 0                 # Góc mở cổng
 SERVO_ANGLE_CLOSE = 90               # Góc đóng cổng
+SERVO_ENTRY_ANGLE_OPEN = SERVO_ANGLE_OPEN
+SERVO_ENTRY_ANGLE_CLOSE = SERVO_ANGLE_CLOSE
+SERVO_EXIT_ANGLE_OPEN = 90
+SERVO_EXIT_ANGLE_CLOSE = 0
 
 # LED Indicator
 LED_PIN = 2

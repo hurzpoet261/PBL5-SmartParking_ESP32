@@ -21,7 +21,7 @@ class Customer(BaseModel):
     """Customer model"""
     customer_id: str = Field(..., description="Customer ID (C000001)")
     name: str = Field(..., min_length=1, max_length=100, description="Full name")
-    phone: Optional[str] = Field(None, max_length=20, description="Phone number")
+    phone: Optional[str] = Field(None, max_length=10, description="Phone number")
     email: Optional[EmailStr] = Field(None, description="Email address")
     address: Optional[str] = Field(None, max_length=200, description="Address")
     id_card: Optional[str] = Field(None, max_length=20, description="ID Card / CMND")
@@ -51,7 +51,7 @@ class Customer(BaseModel):
 class CustomerCreate(BaseModel):
     """Schema for creating customer"""
     name: str = Field(..., min_length=1, max_length=100)
-    phone: Optional[str] = Field(None, max_length=20)
+    phone: Optional[str] = Field(None, max_length=10)
     email: Optional[EmailStr] = None
     address: Optional[str] = Field(None, max_length=200)
     id_card: Optional[str] = Field(None, max_length=20)
@@ -62,7 +62,7 @@ class CustomerCreate(BaseModel):
 class CustomerUpdate(BaseModel):
     """Schema for updating customer"""
     name: Optional[str] = Field(None, min_length=1, max_length=100)
-    phone: Optional[str] = Field(None, max_length=20)
+    phone: Optional[str] = Field(None, max_length=10)
     email: Optional[EmailStr] = None
     address: Optional[str] = Field(None, max_length=200)
     id_card: Optional[str] = Field(None, max_length=20)

@@ -31,6 +31,13 @@
     grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
 }
 
+.slot-fixed-marker {
+    margin-top: 0.125rem;
+    font-size: 0.75rem;
+    color: #92400E;
+    line-height: 1;
+}
+
 .legacy-map-warning {
     grid-column: 1 / -1;
     padding: 0.75rem 1rem;
@@ -112,6 +119,10 @@
     stroke-width: 2.5;
 }
 
+.layout-slot[data-fixed-slot="true"] polygon {
+    stroke-dasharray: 6 4;
+}
+
 .layout-slot.available polygon {
     fill: rgba(209, 250, 229, 0.86);
     stroke: #10B981;
@@ -141,6 +152,17 @@
     stroke: rgba(255, 255, 255, 0.82);
     stroke-width: 3px;
     font-weight: 700;
+}
+
+.layout-slot-fixed-label {
+    pointer-events: none;
+    dominant-baseline: middle;
+    text-anchor: middle;
+    fill: #92400E;
+    paint-order: stroke;
+    stroke: rgba(255, 255, 255, 0.9);
+    stroke-width: 2px;
+    font-weight: 800;
 }
 
 @media (max-width: 768px) {

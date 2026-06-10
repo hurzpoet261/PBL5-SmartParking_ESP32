@@ -193,7 +193,13 @@ class GateMQTTPublisher:
                 result["reason"] = "publish_timeout"
                 return result
 
-            logger.info("[GATE] OPEN command sent command_id=%s topic=%s", command_id, self.topic_gate)
+            logger.info(
+                "[GATE] OPEN command sent command_id=%s action=%s gate_id=%s topic=%s",
+                command_id,
+                action,
+                gate_id,
+                self.topic_gate,
+            )
             result["success"] = True
             result["payload"] = payload
             return result

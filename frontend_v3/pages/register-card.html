@@ -71,11 +71,11 @@
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Số điện thoại *</label>
-                                    <input type="tel" class="form-control" id="customerPhone" required>
+                                    <input type="tel" class="form-control" id="customerPhone" maxlength="10" inputmode="numeric" pattern="[0-9]{1,10}" required>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Email</label>
-                                    <input type="email" class="form-control" id="customerEmail">
+                                    <input type="email" class="form-control" id="customerEmail" placeholder="name@example.com">
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">CMND/CCCD</label>
@@ -124,7 +124,7 @@
                                 <div class="col-md-12">
                                     <div class="row" id="packageOptions">
                                         <div class="col-md-4">
-                                            <div class="card package-card" onclick="selectPackage('per_use')">
+                                            <div class="card package-card" data-package-type="per_use" onclick="selectPackage('per_use')">
                                                 <div class="card-body text-center">
                                                     <h5>Theo lượt</h5>
                                                     <p class="text-muted">5,000đ/giờ</p>
@@ -133,7 +133,7 @@
                                             </div>
                                         </div>
                                         <div class="col-md-4">
-                                            <div class="card package-card" onclick="selectPackage('daily')">
+                                            <div class="card package-card" data-package-type="daily" onclick="selectPackage('daily')">
                                                 <div class="card-body text-center">
                                                     <h5>Theo ngày</h5>
                                                     <p class="text-muted">50,000đ/ngày</p>
@@ -142,7 +142,7 @@
                                             </div>
                                         </div>
                                         <div class="col-md-4">
-                                            <div class="card package-card" onclick="selectPackage('monthly')">
+                                            <div class="card package-card" data-package-type="monthly" onclick="selectPackage('monthly')">
                                                 <div class="card-body text-center">
                                                     <h5>Theo tháng</h5>
                                                     <p class="text-muted">500,000đ/tháng</p>
@@ -151,6 +151,22 @@
                                             </div>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+
+                            <div class="row g-3 mb-4 d-none" id="fixedSlotSection">
+                                <div class="col-md-8">
+                                    <label class="form-label">Chỗ đỗ cố định cho gói tháng *</label>
+                                    <select class="form-select" id="fixedSlotId">
+                                        <option value="">Đang tải danh sách chỗ trống...</option>
+                                    </select>
+                                    <div class="form-text">Chỗ được chọn sẽ chuyển sang trạng thái đặt trước và chỉ xe này được vào.</div>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">&nbsp;</label>
+                                    <button type="button" class="btn btn-outline-secondary w-100" onclick="loadFixedSlots()">
+                                        <i class="bi bi-arrow-clockwise"></i> Làm mới chỗ
+                                    </button>
                                 </div>
                             </div>
 
@@ -198,11 +214,139 @@
         let isAutoFetching = false;
         let fetchAttempts = 0;
         const MAX_ATTEMPTS = 60; // 60 attempts * 2 seconds = 2 minutes
+        let availableFixedSlots = [];
+
+        function getResultError(result, fallback) {
+            return result?.error || result?.detail || fallback;
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#039;');
+        }
+
+        function normalizePlateInput(value) {
+            return String(value || '').trim().toUpperCase().replace(/[^0-9A-Z]/g, '');
+        }
+
+        function validateRegistrationInputs(packageType) {
+            const name = document.getElementById('customerName').value.trim();
+            const phone = document.getElementById('customerPhone').value.trim();
+            const email = document.getElementById('customerEmail').value.trim();
+            const plate = normalizePlateInput(document.getElementById('vehiclePlate').value);
+            const cardUid = document.getElementById('cardUid').value.trim();
+            const fixedSlotId = document.getElementById('fixedSlotId').value;
+
+            if (!name) throw new Error('Vui lòng nhập họ tên khách hàng');
+            if (!/^\d{1,10}$/.test(phone)) {
+                throw new Error('Số điện thoại chỉ được nhập chữ số và không quá 10 ký tự');
+            }
+            if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                throw new Error('Email không hợp lệ, vui lòng nhập đúng định dạng có @');
+            }
+            if (!plate) throw new Error('Vui lòng nhập biển số xe');
+            if (!cardUid) throw new Error('Vui lòng nhập hoặc quét mã thẻ RFID');
+            if (packageType === 'monthly' && !fixedSlotId) {
+                throw new Error('Vui lòng chọn chỗ đỗ cố định cho gói tháng');
+            }
+
+            document.getElementById('vehiclePlate').value = plate;
+            return { plate, fixedSlotId };
+        }
+
+        function getSlotsFromMapResult(result) {
+            if (Array.isArray(result?.data)) return result.data;
+            if (result?.map && typeof result.map === 'object') return Object.values(result.map).flat();
+            return [];
+        }
+
+        function isReservableFixedSlot(slot) {
+            return slot?.status === 'available'
+                && !slot.vehicle_id
+                && !slot.session_id
+                && !slot.reserved_vehicle_id
+                && !slot.reserved_customer_id;
+        }
+
+        function renderFixedSlotOptions() {
+            const select = document.getElementById('fixedSlotId');
+            if (!availableFixedSlots.length) {
+                select.innerHTML = '<option value="">Không còn chỗ trống phù hợp</option>';
+                select.disabled = true;
+                return;
+            }
+
+            select.disabled = false;
+            select.innerHTML = `
+                <option value="">Chọn chỗ cố định</option>
+                ${availableFixedSlots.map(slot => `
+                    <option value="${escapeHtml(slot.slot_id)}">
+                        ${escapeHtml(slot.slot_number || slot.slot_id)} - ${escapeHtml(slot.slot_type || 'standard')}
+                    </option>
+                `).join('')}
+            `;
+        }
+
+        async function loadFixedSlots() {
+            const select = document.getElementById('fixedSlotId');
+            select.disabled = true;
+            select.innerHTML = '<option value="">Đang tải danh sách chỗ trống...</option>';
+
+            const result = await api.get('/slots/map');
+            if (!result?.success) {
+                availableFixedSlots = [];
+                select.innerHTML = '<option value="">Không tải được danh sách chỗ</option>';
+                showToast(getResultError(result, 'Không thể tải danh sách chỗ trống'), 'danger');
+                return;
+            }
+
+            availableFixedSlots = getSlotsFromMapResult(result).filter(isReservableFixedSlot);
+            renderFixedSlotOptions();
+        }
+
+        function updateFixedSlotVisibility(packageType) {
+            const section = document.getElementById('fixedSlotSection');
+            const select = document.getElementById('fixedSlotId');
+            const isMonthly = packageType === 'monthly';
+            section.classList.toggle('d-none', !isMonthly);
+            select.required = isMonthly;
+            if (isMonthly && !availableFixedSlots.length) {
+                loadFixedSlots();
+            }
+            if (!isMonthly) {
+                select.value = '';
+            }
+        }
         
+        async function startRegistrationModeSafely() {
+            try {
+                const isBackendRunning = await checkBackend();
+                if (!isBackendRunning) {
+                    throw new Error('Backend chưa chạy hoặc không kết nối được http://127.0.0.1:8000');
+                }
+
+                const result = await api.post('/rfid/registration-mode/start', {});
+                if (!result || !result.success) {
+                    throw new Error(getResultError(result, 'Backend từ chối bật chế độ đăng ký'));
+                }
+                return result;
+            } catch (error) {
+                showToast('Không thể bật chế độ đăng ký thẻ: ' + (error.message || error), 'danger');
+                return { success: true, fatal: true };
+            }
+        }
+
         async function startAutoFetch() {
             if (autoFetchInterval) return;
 
-            const modeResult = await api.post('/rfid/registration-mode/start', {});
+            document.getElementById('scanCardBtn').disabled = true;
+            const modeResult = await startRegistrationModeSafely();
+            document.getElementById('scanCardBtn').disabled = false;
+            if (modeResult.fatal) return;
             if (!modeResult || !modeResult.success) {
                 showToast('Không thể bật chế độ đăng ký thẻ', 'danger');
                 return;
@@ -281,9 +425,12 @@
         function selectPackage(type) {
             document.querySelectorAll('.package-card').forEach(card => {
                 card.classList.remove('border-primary');
+                if (card.dataset.packageType === type) {
+                    card.classList.add('border-primary');
+                }
             });
-            event.currentTarget.classList.add('border-primary');
             document.querySelector(`input[value="${type}"]`).checked = true;
+            updateFixedSlotVisibility(type);
         }
 
         document.getElementById('registerForm').addEventListener('submit', async (e) => {
@@ -295,6 +442,8 @@
             submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Đang xử lý...';
             
             try {
+                const packageType = document.querySelector('input[name="package"]:checked').value;
+                const { plate, fixedSlotId } = validateRegistrationInputs(packageType);
                 // Validate card UID
                 const cardUid = document.getElementById('cardUid').value.trim();
                 if (!cardUid) {
@@ -305,7 +454,6 @@
                     await stopAutoFetch();
                 }
 
-                const packageType = document.querySelector('input[name="package"]:checked').value;
                 
                 // Create customer
                 const customerData = {
@@ -323,7 +471,7 @@
                 console.log('Customer result:', customerResult);
                 
                 if (!customerResult || !customerResult.success) {
-                    throw new Error(customerResult?.error || 'Không thể tạo khách hàng');
+                    throw new Error(getResultError(customerResult, 'Không thể tạo khách hàng'));
                 }
                 
                 const customerId = customerResult.data.customer_id;
@@ -332,7 +480,7 @@
                 // Create vehicle
                 const vehicleData = {
                     customer_id: customerId,
-                    plate_number: document.getElementById('vehiclePlate').value.trim(),
+                    plate_number: plate,
                     vehicle_type: document.getElementById('vehicleType').value,
                     brand: null,
                     model: null,
@@ -344,7 +492,7 @@
                 console.log('Vehicle result:', vehicleResult);
                 
                 if (!vehicleResult || !vehicleResult.success) {
-                    throw new Error(vehicleResult?.error || 'Không thể tạo xe');
+                    throw new Error(getResultError(vehicleResult, 'Không thể tạo xe'));
                 }
                 
                 const vehicleId = vehicleResult.data.vehicle_id;
@@ -362,7 +510,7 @@
                 console.log('Card result:', cardResult);
                 
                 if (!cardResult || !cardResult.success) {
-                    throw new Error(cardResult?.error || 'Không thể đăng ký thẻ');
+                    throw new Error(getResultError(cardResult, 'Không thể đăng ký thẻ'));
                 }
                 
                 // Create package if not per_use
@@ -372,12 +520,15 @@
                         vehicle_id: vehicleId,
                         package_type: packageType
                     };
+                    if (packageType === 'monthly') {
+                        packageData.fixed_slot_id = fixedSlotId;
+                    }
                     console.log('Creating package:', packageData);
                     const pkgResult = await api.post('/packages', packageData);
                     console.log('Package result:', pkgResult);
 
                     if (!pkgResult || !pkgResult.success) {
-                        throw new Error(pkgResult?.error || 'Khong the tao goi cuoc');
+                        throw new Error(getResultError(pkgResult, 'Không thể tạo gói cước'));
                     }
                 }
                 
@@ -410,6 +561,17 @@
         
         // Check backend on load
         document.addEventListener('DOMContentLoaded', async () => {
+            selectPackage(document.querySelector('input[name="package"]:checked')?.value || 'per_use');
+            document.getElementById('customerPhone').addEventListener('input', (event) => {
+                event.target.value = event.target.value.replace(/\D/g, '').slice(0, 10);
+            });
+            document.getElementById('vehiclePlate').addEventListener('input', (event) => {
+                event.target.value = normalizePlateInput(event.target.value);
+            });
+            document.getElementById('registerForm').addEventListener('reset', () => {
+                setTimeout(() => selectPackage('per_use'), 0);
+            });
+            await loadFixedSlots();
             const isBackendRunning = await checkBackend();
             if (!isBackendRunning) {
                 showToast('⚠️ Backend chưa chạy! Vui lòng chạy: python -m app.main', 'danger');
