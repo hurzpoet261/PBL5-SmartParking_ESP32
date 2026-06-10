@@ -7,8 +7,8 @@ Cấu hình tập trung cho toàn bộ hệ thống ESP32
 # WI-FI CONFIGURATION
 # ═══════════════════════════════════════════════════
 
-WIFI_SSID = "S House"
-WIFI_PASS = "Phuocbaotinh"           # ⚠️ THAY ĐỔI: Mật khẩu Wi-Fi
+WIFI_SSID = "t"
+WIFI_PASS = "00000007"               # ⚠️ THAY ĐỔI: Mật khẩu Wi-Fi
 WIFI_TIMEOUT = 20                    # Timeout kết nối (giây)
 WIFI_RETRY_DELAY = 5                 # Delay giữa các lần thử lại (giây)
 
@@ -16,7 +16,7 @@ WIFI_RETRY_DELAY = 5                 # Delay giữa các lần thử lại (giâ
 # BACKEND API CONFIGURATION (LEGACY HTTP FIRMWARE ONLY)
 # ═══════════════════════════════════════════════════
 
-API_BASE_URL = "http://192.168.1.48:8000/api/v1"  # ⚠️ THAY ĐỔI: IP máy tính chạy backend
+API_BASE_URL = "http://10.147.41.150:8000/api/v1"  # ⚠️ THAY ĐỔI: IP máy tính chạy backend
 # API_BASE_URL is only used by legacy_esp32_main.py. Current main.py uses MQTT.
 API_TIMEOUT = 10                     # Timeout cho API request (giây)
 API_RETRY = 3                        # Số lần thử lại khi lỗi
@@ -25,7 +25,7 @@ API_RETRY = 3                        # Số lần thử lại khi lỗi
 # MQTT CONFIGURATION (ESP32 thường -> Python camera_bridge.py)
 # ═══════════════════════════════════════════════════
 
-MQTT_BROKER = "192.168.1.48" # ⚠️ THAY ĐỔI: IP máy tính chạy backend
+MQTT_BROKER = "10.147.41.150" # ⚠️ THAY ĐỔI: IP máy tính chạy backend
 MQTT_PORT = 1883
 MQTT_KEEPALIVE = 60
 MQTT_CLIENT_ID = "esp32-gate-01"
@@ -77,6 +77,8 @@ BUZZER_PIN = 13
 # Ultrasonic Sensor (HC-SR04)
 ULTRASONIC_TRIG_PIN = 26
 ULTRASONIC_ECHO_PIN = 35
+ULTRASONIC_ENABLED = True
+ULTRASONIC_TIMEOUT_US = 30_000
 ULTRASONIC_THRESHOLD_CM = 10         # Khoảng cách phát hiện người (cm)
 
 # LCD I2C Display

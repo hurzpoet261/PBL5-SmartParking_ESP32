@@ -96,7 +96,7 @@ TOPIC_GATE = (
     or "pbl5/smartparking/gate"
 )
 
-ESP32_CAM_URL = os.getenv("ESP32_CAM_URL") or "http://192.168.1.208/capture"
+ESP32_CAM_URL = os.getenv("ESP32_CAM_URL") or "http://10.147.41.178/capture"
 ESP32_CAM_CONNECT_TIMEOUT = _env_float("ESP32_CAM_CONNECT_TIMEOUT", 1.0)
 ESP32_CAM_READ_TIMEOUT = _env_float("ESP32_CAM_READ_TIMEOUT", 3.5)
 BURST_COUNT = _env_int("BURST_COUNT", 2)
@@ -148,9 +148,9 @@ PLATE_DETECTOR_CONF = _env_float("PLATE_DETECTOR_CONF", 0.35)
 PLATE_DETECTOR_IMGSZ = _env_int("PLATE_DETECTOR_IMGSZ", 640)
 PLATE_DETECTOR_CLASS_ID = _env_int("PLATE_DETECTOR_CLASS_ID", -1)
 PLATE_DETECTOR_REQUIRED = _env_bool("PLATE_DETECTOR_REQUIRED", False)
-PLATE_DETECTOR_FALLBACK_FULL_IMAGE = _env_bool("PLATE_DETECTOR_FALLBACK_FULL_IMAGE", True)
+PLATE_DETECTOR_FALLBACK_FULL_IMAGE = _env_bool("PLATE_DETECTOR_FALLBACK_FULL_IMAGE", False)
 MAX_PLATE_DETECTIONS_PER_IMAGE = _env_int("MAX_PLATE_DETECTIONS_PER_IMAGE", 2)
-PLATE_CROP_PADDING_RATIO = _env_float("PLATE_CROP_PADDING_RATIO", 0.08)
+PLATE_CROP_PADDING_RATIO = _env_float("PLATE_CROP_PADDING_RATIO", 0.20)
 PLATE_DETECTOR_ROI_ENABLED = _env_bool("PLATE_DETECTOR_ROI_ENABLED", False)
 PLATE_DETECTOR_ROI_X1 = _env_float("PLATE_DETECTOR_ROI_X1", 0.28)
 PLATE_DETECTOR_ROI_Y1 = _env_float("PLATE_DETECTOR_ROI_Y1", 0.24)
@@ -170,6 +170,8 @@ OCR_FAST_VARIANTS = _env_bool("OCR_FAST_VARIANTS", True)
 OCR_MAX_VARIANTS_PER_CROP = _env_int("OCR_MAX_VARIANTS_PER_CROP", 3)
 OCR_SAVE_DEBUG_CROPS = _env_bool("OCR_SAVE_DEBUG_CROPS", False)
 OCR_DEBUG_DIR = Path(os.getenv("OCR_DEBUG_DIR", str(BACKEND_DIR / "captured_images" / "_ocr_debug")))
+YOLO_SAVE_DEBUG_IMAGES = _env_bool("YOLO_SAVE_DEBUG_IMAGES", False)
+YOLO_DEBUG_DIR = Path(os.getenv("YOLO_DEBUG_DIR", str(BACKEND_DIR / "captured_images" / "_yolo_debug")))
 
 MAX_PROCESS_IMAGE_WIDTH = _env_int("MAX_PROCESS_IMAGE_WIDTH", 1200)
 MIN_BLUR_SCORE = _env_float("MIN_BLUR_SCORE", 40.0)
@@ -1196,6 +1198,7 @@ def analyze_frame(frame: CapturedFrame) -> None:
 
     image = resize_for_processing(image)
     detections = runtime.detect_plates(image)
+    save_yolo_debug_images(frame, image, detections)
     frame.detections = detections
     selected = detections[0] if detections else None
     frame.selected_detection = selected
@@ -1246,6 +1249,57 @@ def save_debug_crop(frame: CapturedFrame, crop: np.ndarray, variant_name: str) -
         cv2.imwrite(str(output), crop)
     except OSError as exc:
         logger.warning("[OCR] Failed to save debug crop: %s", exc)
+
+
+def save_yolo_debug_images(frame: CapturedFrame, image: np.ndarray, detections: Sequence[PlateDetection]) -> None:
+    if not YOLO_SAVE_DEBUG_IMAGES:
+        return
+
+    try:
+        YOLO_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+        stem = Path(frame.filename).stem
+        height, width = image.shape[:2]
+        roi_x1, roi_y1, roi_x2, roi_y2 = plate_detector_roi_bounds(width, height)
+        roi = image[roi_y1:roi_y2, roi_x1:roi_x2]
+        cv2.imwrite(str(YOLO_DEBUG_DIR / f"{stem}_yolo_input.jpg"), roi)
+
+        annotated = image.copy()
+        cv2.rectangle(annotated, (roi_x1, roi_y1), (roi_x2, roi_y2), (255, 0, 0), 2)
+        cv2.putText(
+            annotated,
+            "YOLO input",
+            (max(0, roi_x1), max(18, roi_y1 - 6)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (255, 0, 0),
+            2,
+            cv2.LINE_AA,
+        )
+
+        for index, detection in enumerate(detections, start=1):
+            color = (0, 255, 0) if detection.source != "fallback_full_image" else (0, 165, 255)
+            cv2.rectangle(
+                annotated,
+                (detection.x1, detection.y1),
+                (detection.x2, detection.y2),
+                color,
+                2,
+            )
+            label = f"{index}:{detection.source} {detection.confidence:.2f}"
+            cv2.putText(
+                annotated,
+                label,
+                (max(0, detection.x1), max(18, detection.y1 - 6)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                color,
+                2,
+                cv2.LINE_AA,
+            )
+
+        cv2.imwrite(str(YOLO_DEBUG_DIR / f"{stem}_yolo_annotated.jpg"), annotated)
+    except OSError as exc:
+        logger.warning("[YOLO] Failed to save debug image: %s", exc)
 
 
 def ocr_frame(

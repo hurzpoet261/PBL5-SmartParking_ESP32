@@ -6,8 +6,8 @@
 #include "freertos/task.h"
 
 // ================= BẠN ĐIỀN WIFI Ở ĐÂY =================
-const char* ssid = "S House";
-const char* password = "Phuocbaotinh";
+const char* ssid = "t";
+const char* password = "00000007";
 // =======================================================
 
 #define PWDN_GPIO_NUM     32

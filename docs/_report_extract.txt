@@ -1,0 +1,860 @@
+[TABLE]
+ | ĐẠI HỌC ĐÀ NẴNG / TRƯỜNG ĐẠI HỌC BÁCH KHOA / KHOA CÔNG NGHỆ THÔNG TIN | 
+BÁO CÁO
+PBL5 – DỰ ÁN KỸ THUẬT MÁY TÍNH
+ĐỀ TÀI:
+HỆ THỐNG BÃI ĐỖ XE THÔNG MINH
+Giảng viên hướng dẫn:         ThS. Trần Hồ Thủy Tiên
+[TABLE]
+NHÓM SINH VIÊN THỰC HIỆN | LỚP HỌC PHẦN
+Nguyễn Hoàng Huy | 23T-DT4
+Trần Bảo Minh | 23T-DT4
+Trần Đăng Bảo Khương | 23T-DT4
+Nguyễn Xuân Tịnh | 23T-DT3
+Đà Nẵng, 06/2026
+TÓM TẮT ĐỒ ÁN
+Đồ án xây dựng hệ thống quản lý bãi xe thông minh nhằm tự động hóa quy trình xe vào/ra, giảm thao tác thủ công, hạn chế sai sót trong ghi nhận lượt gửi xe và hỗ trợ người quản lý giám sát tình trạng bãi xe theo thời gian thực. Hệ thống sử dụng ESP32 làm bộ điều khiển trung tâm tại cổng, kết hợp đầu đọc RFID MFRC522 để định danh thẻ, servo để điều khiển barrier, LCD I2C, LED và buzzer để phản hồi trạng thái, cảm biến siêu âm để hỗ trợ phát hiện vật cản gần cổng. Hệ thống sử dụng ESP32 RFID/barrier để đọc UID thẻ và publish sự kiện qua MQTT, sau đó gửi dữ liệu hoàn chỉnh về backend FastAPI, lưu trữ trong MongoDB và hiển thị trên giao diện web dashboard. Phần mềm quản lý các đối tượng khách hàng, phương tiện, thẻ RFID, phiên gửi xe, chỗ đỗ, gói cước, giao dịch và doanh thu. Khi xe vào, hệ thống kiểm tra thẻ, kiểm tra chỗ trống, tạo phiên gửi xe và điều khiển mở cổng; khi xe ra, hệ thống đóng phiên, tính thời gian gửi, tính phí và giải phóng chỗ đỗ. Ngoài ra, đồ án thiết kế mô-đun ESP32-CAM/AI nhận diện biển số nhằm chụp ảnh, phát hiện vùng biển số, đọc ký tự và đối chiếu với dữ liệu phương tiện, từ đó tăng độ tin cậy so với hệ thống chỉ dùng thẻ RFID. Kết quả đạt được là một mô hình IoT có khả năng vận hành quy trình gửi xe cơ bản, quản lý dữ liệu tập trung, hiển thị trạng thái bãi xe trực quan và cảnh báo khi bãi xe gần đầy hoặc quá tải.
+BẢNG PHÂN CÔNG NHIỆM VỤ
+[TABLE]
+Sinh viên thực hiện | Các nhiệm vụ | Tự đánh giá
+Trần Bảo Minh | Nghiên cứu và triển khai hệ thống nhận diện biển số; xây dựng dataset, lọc dữ liệu và sinh pseudo-label; huấn luyện YOLOv8 phát hiện biển số; tích hợp YOLO + PaddleOCR trong camera_bridge.py; kiểm thử pipeline AI/OCR và đánh giá mô hình. | Đã hoàn thành
+Nguyễn Hoàng Huy | Thiết kế và phát triển backend FastAPI; xây dựng MongoDB/GridFS; phát triển API access events, khách hàng, phương tiện, RFID, slot, session, package, revenue; xử lý nghiệp vụ check-in/check-out; tích hợp MQTT gate command, gate_ack và kết nối các thành phần hệ thống. | Đã hoàn thành
+Nguyễn Xuân Tịnh | Thiết kế và triển khai phần cứng IoT; lập trình ESP32 RFID/barrier đọc MFRC522, publish UID qua MQTT, nhận lệnh OPEN, điều khiển servo cổng vào/cổng ra, LCD, buzzer, LED, HC-SR04; kiểm thử barrier và tích hợp với backend. | Đã hoàn thành
+Trần Đăng Bảo Khương | Thiết kế và phát triển dashboard web; xây dựng giao diện quản lý khách hàng, phương tiện, access events, camera events, map chỗ đỗ, thiết kế bãi đỗ, gói cước, lịch sử và doanh thu; tích hợp frontend với backend API; hỗ trợ kiểm thử tổng thể, báo cáo và demo. | Đã hoàn thành
+DANH MỤC HÌNH ẢNH
+Hình 1.1.  Mô hình tổng quan hệ thống	13
+Hình 2.1. Sơ đồ khối phần cứng	17
+Hình 2.2. Lưu đồ hoạt động của ESP32 điều khiển cổng	19
+Hình 2.3. Lưu đồ hoạt động của ESP32-CAM	20
+Hình 2.4. Sơ đồ phối hợp giữa ESP32, ESP32-CAM và backend tại cổng	21
+Hình 2.5. Luồng xử lí nhận diện biển số	29
+Hình 2.6. Lưu đồ xử lý của camera_bridge.py	31
+Hình 2.7. Quy trình huấn luyện và tích hợp mô hình.	34
+Hình 2.8. Luồng xử lý runtime nhận diện biển số	36
+Hình 2.9. Luồng tích hợp giữa YOLO, PaddleOCR và backend	38
+Hình 2.10. Kiến trúc phần mềm	39
+Hình 2.11. Luồng thiết kế sơ đồ bãi đỗ bán tự động	47
+Hình 3.1. Ảnh mô hình phần cứng.	49
+Hình 3.2. Ảnh terminal backend chạy thành công.	50
+Hình 3.3. Ảnh terminal camera_bridge thể hiện subscribe RFID, capture ảnh và gửi POST	51
+Hình 3.4. Ảnh chụp từ ESP32-CAM qua endpoint /capture	55
+Hình 3.5. Swagger UI endpoint	57
+Hình 3.6. Giao diện dashboard tổng quan	59
+Hình 3.7. Giao diện Camera events hiển thị UID, biển số và ảnh capture	59
+Hình 3.8. Ví dụ giao diện trang thiết kế bãi đỗ	61
+Hình 3.9. Map chỗ đỗ hiện tại của dự án	62
+Hình 3.10. Biểu đồ kết quả huấn luyện mô hình YOLOv8 phát hiện biển số	62
+Hình 3.11. Đường cong Precision-Recall của mô hình YOLOv8	63
+Hình 3.12. Ma trận nhầm lẫn chuẩn hóa của mô hình YOLOv8	64
+DANH MỤC BẢNG
+Bảng 1.1. So sánh một số phương án quản lý bãi xe	9
+Bảng 2.1. Danh sách linh kiện sử dụng	14
+Bảng 2.2. Bảng kết nối chân ESP32	16
+Bảng 2.3. Luồng truyền thông chính	22
+Bảng 2.4. Bảng chi phí linh kiện	27
+Bảng 2.5. Vai trò các thành phần trong mô-đun nhận diện biển số	30
+Bảng 2.6. Phân chia tập dữ liệu huấn luyện mô hình phát hiện biển số	32
+Bảng 2.7. Cấu hình huấn luyện mô hình YOLO	33
+Bảng 2.8. Kết quả đánh giá mô hình YOLO	35
+Bảng 2.9. Danh sách collection MongoDB	40
+Bảng 2.10. Danh sách API chính	43
+Bảng 2.11. Các thành phần trong chức năng thiết kế sơ đồ bãi đỗ bán tự động	46
+Bảng 3.1. Môi trường thực nghiệm	48
+Bảng 3.2. Các bước cài đặt và chạy demo	49
+Bảng 3.3. Dữ liệu kiểm thử đề xuất	52
+Bảng 3.4. Kịch bản kiểm thử chức năng	52
+Bảng 3.5. Kết quả kiểm thử phần cứng	54
+Bảng 3.6. Kết quả kiểm thử backend	55
+Bảng 3.7. Kết quả kiểm thử dashboard	58
+Bảng 3.8. Kết quả kiểm thử quá tải	60
+Bảng 3.9. Kết quả kiểm thử chức năng thiết kế sơ đồ bãi đỗ bán tự động	60
+Bảng 3.10. Kết quả validation mô hình YOLO phát hiện biển số	64
+Bảng 3.11. Kết quả kiểm thử pipeline AI/OCR runtime	65
+Bảng 3.12. Nhận xét mô-đun AI/OCR	66
+Bảng 3.13. Đánh giá tổng hợp hệ thống	67
+Giới thiệu
+Bối cảnh và hiện trạng
+Trong các khu vực có nhu cầu gửi xe thường xuyên như trường học, chung cư, bệnh viện, siêu thị, cơ quan hoặc khu công nghiệp, việc quản lý xe ra vào là một hoạt động quan trọng. Phương pháp truyền thống thường dựa vào vé giấy, sổ ghi chép hoặc thao tác thủ công của nhân viên bảo vệ. Khi số lượng xe ít, cách làm này có thể đáp ứng được nhu cầu cơ bản. Tuy nhiên, khi lưu lượng xe tăng, phương pháp thủ công bộc lộ nhiều hạn chế như mất thời gian ghi nhận, dễ nhầm lẫn biển số, khó kiểm soát xe đang ở trong bãi, khó thống kê doanh thu và khó phát hiện tình trạng bãi đầy theo thời gian thực.
+Một bãi xe hiện đại cần có khả năng tự động nhận diện người dùng hoặc phương tiện, ghi nhận thời gian vào/ra, lưu trữ lịch sử, tính phí, quản lý chỗ đỗ và cung cấp số liệu thống kê cho người quản lý. Các hệ thống thương mại hiện nay thường tích hợp thẻ RFID, camera nhận diện biển số, cảm biến cổng, phần mềm quản lý và cơ sở dữ liệu tập trung. Tuy nhiên, chi phí triển khai hệ thống thương mại thường tương đối cao, khó tùy biến theo quy mô nhỏ và chưa phù hợp với mục tiêu học tập, nghiên cứu trong phạm vi đồ án sinh viên.
+Từ thực tế đó, đề tài “Hệ thống quản lý bãi xe thông minh tích hợp RFID, ESP32-CAM nhận diện biển số, điều khiển cổng tự động và cảnh báo quá tải” được lựa chọn nhằm xây dựng một mô hình IoT có tính ứng dụng thực tế. Hệ thống không chỉ xử lý thao tác xe vào/ra mà còn kết hợp phần cứng, truyền thông mạng, backend API, cơ sở dữ liệu, giao diện web dashboard và mô-đun nhận diện biển số. Qua đó, nhóm sinh viên có thể vận dụng kiến thức về kỹ thuật máy tính, lập trình nhúng, mạng máy tính, cơ sở dữ liệu, xử lý ảnh và phát triển phần mềm web.
+Các sản phẩm và dự án tương tự
+Hiện nay có nhiều dạng hệ thống quản lý bãi xe khác nhau. Dạng đơn giản nhất là hệ thống vé giấy, trong đó nhân viên ghi biển số hoặc phát vé thủ công. Dạng thứ hai là hệ thống dùng thẻ từ hoặc RFID để định danh lượt gửi xe. Dạng thứ ba là hệ thống camera nhận diện biển số tự động, thường được dùng ở các bãi xe lớn. Dạng cao hơn là hệ thống tích hợp nhiều yếu tố gồm RFID, camera, cảm biến vị trí, thanh toán điện tử và dashboard quản trị thời gian thực.
+Mỗi phương án có ưu điểm và hạn chế riêng. Vé giấy có chi phí thấp nhưng phụ thuộc vào con người. RFID có tốc độ xử lý nhanh, chi phí phần cứng vừa phải, nhưng nếu chỉ dựa vào thẻ thì có nguy cơ dùng nhầm thẻ hoặc mất thẻ. Nhận diện biển số giúp tăng độ tin cậy vì xác thực được phương tiện, nhưng độ chính xác phụ thuộc vào góc chụp, ánh sáng, chất lượng camera và mô hình nhận diện. Vì vậy, đồ án đề xuất kết hợp RFID với camera biển số để tận dụng ưu điểm của cả hai: RFID giúp định danh nhanh, còn biển số giúp đối chiếu phương tiện.
+Bảng 1.1. So sánh một số phương án quản lý bãi xe
+[TABLE]
+Phương án | Ưu điểm | Hạn chế | Mức phù hợp với đồ án
+Vé giấy/sổ ghi | Rẻ, dễ triển khai | Dễ thất lạc, khó thống kê, phụ thuộc người vận hành | Thấp
+RFID độc lập | Nhanh, chi phí vừa phải, dễ tích hợp ESP32 | Chưa xác thực trực quan phương tiện | Cao
+Camera biển số độc lập | Xác thực phương tiện tốt, lưu hình ảnh | Cần xử lý ảnh, phụ thuộc ánh sáng/góc chụp | Trung bình – cao
+RFID + camera + dashboard | Tự động hóa tốt, có dữ liệu quản lý, tăng an toàn | Phức tạp hơn, cần backend/database | Rất cao
+Vấn đề cần giải quyết
+Đề tài cần giải quyết các nhóm vấn đề sau:
+Thứ nhất là vấn đề định danh. Hệ thống phải nhận biết được thẻ RFID nào đang được quét, thẻ đó có tồn tại trong cơ sở dữ liệu hay không, có đang hoạt động hay đã bị khóa, và thẻ đó liên kết với khách hàng hoặc phương tiện nào. Nếu dùng thêm camera, hệ thống cần nhận diện biển số và đối chiếu với thông tin xe đã đăng ký.
+Thứ hai là vấn đề quản lý lượt xe vào/ra. Khi xe vào, hệ thống phải tạo phiên gửi xe mới, lưu thời gian vào, gán chỗ trống và cập nhật trạng thái bãi xe. Khi xe ra, hệ thống phải tìm đúng phiên đang mở, cập nhật thời gian ra, tính thời gian gửi, tính phí và giải phóng chỗ đỗ. Quy trình này phải tránh tạo trùng phiên, tránh đóng nhầm phiên và đảm bảo trạng thái dữ liệu nhất quán.
+Thứ ba là vấn đề điều khiển phần cứng tại cổng. ESP32 phải đọc thẻ RFID, giao tiếp với backend, điều khiển servo mở/đóng barrier, hiển thị trạng thái trên LCD, báo hiệu bằng LED/buzzer và có cơ chế xử lý khi lỗi mạng hoặc backend không phản hồi.
+Thứ tư là vấn đề giám sát quá tải. Hệ thống cần biết tổng số chỗ, số chỗ đang sử dụng, số chỗ trống và tỷ lệ lấp đầy. Khi bãi xe đầy hoặc gần đầy, hệ thống cần cảnh báo trên dashboard và từ chối xe vào nếu không còn chỗ trống.
+Thứ năm là vấn đề quản lý và thống kê. Người quản lý cần giao diện web để xem dữ liệu khách hàng, phương tiện, thẻ RFID, phiên gửi xe, chỗ đỗ, gói cước, giao dịch và doanh thu. Giao diện phải trực quan, dễ dùng và hỗ trợ kiểm tra trạng thái bãi xe theo thời gian gần thực.
+Mục tiêu đề tài
+Mục tiêu tổng quát của đồ án là xây dựng một hệ thống quản lý bãi xe thông minh quy mô mô hình, có khả năng tự động hóa quy trình xe vào/ra, quản lý thông tin khách hàng và phương tiện, giám sát tình trạng bãi xe, hỗ trợ tính phí và cảnh báo quá tải.
+Các mục tiêu cụ thể gồm:
+Xây dựng mô hình phần cứng sử dụng ESP32 làm bộ điều khiển RFID/barrier tại cổng.
+Tích hợp đầu đọc RFID MFRC522 để đọc UID thẻ RFID.
+Điều khiển servo cổng vào và cổng ra, tương ứng với GPIO14 và GPIO27 theo cấu hình firmware.
+Tích hợp LCD I2C, LED và buzzer để hiển thị/truyền đạt trạng thái cho người dùng.
+Tích hợp cảm biến siêu âm HC-SR04 để hỗ trợ phát hiện xe hoặc vật cản gần barrier.
+Xây dựng firmware ESP32 RFID/barrier để publish UID qua MQTT, nhận lệnh OPEN từ backend và gửi gate_ack sau khi thực hiện điều khiển barrier.
+Xây dựng ESP32-CAM chạy HTTP camera server, cung cấp endpoint /capture để chụp ảnh OCR và /stream để căn chỉnh camera.
+Xây dựng camera_bridge.py trên server để nhận UID qua MQTT, gọi ESP32-CAM chụp ảnh, xử lý YOLO + PaddleOCR và gửi dữ liệu về backend.
+Xây dựng backend FastAPI để xử lý access events, kiểm tra RFID, biển số, slot, session, gói cước, doanh thu và publish MQTT OPEN nếu hợp lệ.
+Thiết kế cơ sở dữ liệu MongoDB/GridFS để lưu khách hàng, phương tiện, thẻ RFID, phiên gửi xe, slot, layout, gói cước, giao dịch, sự kiện và ảnh camera.
+Xây dựng dashboard web để người quản lý theo dõi trạng thái bãi xe, camera events, map chỗ đỗ, lịch sử và doanh thu.
+Phạm vi đồ án
+Phạm vi triển khai của đồ án tập trung vào mô hình bãi xe quy mô nhỏ. Hệ thống sử dụng ESP32 RFID/barrier để đọc thẻ, điều khiển servo cổng vào/cổng ra, hiển thị LCD, buzzer/LED và cảm biến khoảng cách. Sự kiện quẹt thẻ được gửi qua MQTT, không xử lý mở cổng trực tiếp trên thiết bị. Backend là thành phần quyết định nghiệp vụ và gửi lại lệnh mở cổng thông qua MQTT.
+Mô-đun ESP32-CAM được triển khai như một camera server riêng, có endpoint /capture để chụp ảnh phục vụ OCR và /stream để căn chỉnh camera. Việc xử lý nhận diện biển số không chạy trên ESP32-CAM mà chạy trên server thông qua camera_bridge.py, YOLOv8 và PaddleOCR. Pipeline hiện tại đã được tích hợp ở mức demo/prototype, có khả năng nhận sự kiện RFID, chụp ảnh, nhận diện biển số, gửi access event về backend, lưu ảnh và hiển thị trên dashboard.
+Backend FastAPI và MongoDB/GridFS được triển khai trên máy tính/server cục bộ trong cùng mạng LAN/Wi-Fi. Frontend dashboard chạy trong thư mục frontend và cung cấp các trang quản lý như Dashboard, Đăng ký thẻ, Khách hàng, Xe, Map chỗ đỗ, Thiết kế bãi đỗ, Gói cước, Lịch sử, Camera events và Doanh thu.
+Các nội dung chưa ưu tiên trong phạm vi đồ án gồm: thanh toán điện tử thực tế, ứng dụng mobile, phân quyền người dùng hoàn chỉnh, triển khai cloud production, stress test với lưu lượng lớn, WebSocket realtime, đồng bộ nhiều cổng ở quy mô bãi xe lớn và tối ưu OCR trong mọi điều kiện ánh sáng ngoài môi trường demo.
+Phương án tiếp cận
+Đề tài được tiếp cận theo hướng phân tách hệ thống thành các khối chức năng độc lập nhưng có khả năng phối hợp thông qua MQTT và API. Khối ESP32 RFID/barrier phụ trách đọc UID thẻ và điều khiển barrier. Khối ESP32-CAM chỉ phụ trách chụp ảnh. Khối camera_bridge.py chạy trên server phụ trách nhận sự kiện RFID từ MQTT, gọi camera, xử lý YOLO/PaddleOCR và gửi kết quả về backend. Khối backend FastAPI xử lý nghiệp vụ, lưu trữ dữ liệu và quyết định mở/không mở cổng. Khối frontend hỗ trợ quản trị và quan sát dữ liệu.
+Quy trình phát triển gồm các bước chính:
+Phân tích yêu cầu và xác định luồng vận hành thực tế của hệ thống.
+Thiết kế kiến trúc tổng thể gồm ESP32 RFID/barrier, ESP32-CAM, MQTT broker, camera_bridge.py, FastAPI, MongoDB/GridFS và dashboard.
+Lắp ráp và kiểm thử từng linh kiện phần cứng.
+Viết firmware ESP32 RFID/barrier để đọc MFRC522, publish UID qua MQTT, nhận OPEN và gửi gate_ack.
+Xây dựng ESP32-CAM HTTP server với endpoint /capture và /stream.
+Xây dựng pipeline server-side OCR bằng camera_bridge.py, YOLOv8 và PaddleOCR.
+Xây dựng backend API, MongoDB/GridFS và nghiệp vụ access events.
+Xây dựng dashboard web để quản lý dữ liệu và hiển thị camera events.
+Kiểm thử hệ thống theo các kịch bản xe vào, xe ra, RFID lỗi, biển số lỗi, bãi đầy, mất kết nối và thống kê doanh thu.
+Đánh giá kết quả, chỉ ra hạn chế và đề xuất hướng phát triển.
+Giải pháp tổng quan
+Hệ thống được chia thành năm khối chính: khối IoT tại cổng, khối camera, khối AI/OCR trung gian, khối backend/database và khối giao diện quản trị.
+Khối IoT tại cổng gồm ESP32 RFID/barrier, MFRC522, servo cổng vào/cổng ra, LCD I2C, buzzer, LED và HC-SR04. Khi người dùng quẹt thẻ, ESP32 đọc UID và publish sự kiện RFID lên MQTT broker. Thiết bị không tự quyết định mở cổng mà chờ lệnh OPEN từ backend thông qua MQTT.
+Khối camera gồm ESP32-CAM chạy HTTP camera server. ESP32-CAM cung cấp endpoint /capture để chụp ảnh phục vụ OCR và /stream để căn chỉnh camera. Thiết bị này chỉ chụp ảnh, không chạy YOLO hoặc OCR trực tiếp.
+Khối AI/OCR trung gian là camera_bridge.py. Thành phần này subscribe topic MQTT pbl5/smartparking/rfid_scanned, nhận UID thẻ, gọi ESP32-CAM để chụp ảnh burst, chọn ảnh tốt nhất, dùng YOLOv8 phát hiện vùng biển số, dùng PaddleOCR đọc ký tự, chuẩn hóa biển số và gửi UID, biển số, ảnh, metrics về backend qua endpoint /api/v1/access-events/rfid-camera.
+Khối backend FastAPI xử lý nghiệp vụ: kiểm tra RFID, kiểm tra biển số, kiểm tra slot, xác định session vào/ra, tính phí, lưu access event, lưu ảnh vào MongoDB/GridFS, cập nhật dashboard và publish MQTT OPEN nếu dữ liệu hợp lệ. Khối dashboard web hiển thị trạng thái bãi xe, camera events, map chỗ đỗ, lịch sử, gói cước, doanh thu và các thông tin quản lý khác.
+Hình 1.1.  Mô hình tổng quan hệ thống
+Giải pháp
+Giải pháp phần cứng và truyền thông
+Yêu cầu thiết kế phần cứng
+Phần cứng của hệ thống cần đáp ứng các yêu cầu sau:
+Có khả năng đọc thẻ RFID ổn định ở khoảng cách gần.
+Có khả năng gửi dữ liệu đến backend qua Wi-Fi.
+Có khả năng điều khiển barrier đóng/mở bằng servo.
+Có khả năng phản hồi trạng thái cho người dùng thông qua LCD, LED và buzzer.
+Có khả năng hỗ trợ phát hiện vật cản hoặc xe gần barrier bằng cảm biến siêu âm.
+Có thiết kế đơn giản, phù hợp với mô hình đồ án, dễ lắp ráp và dễ kiểm thử.
+Có khả năng tích hợp ESP32-CAM hoặc camera nhận diện biển số.
+ESP32 được chọn làm bộ điều khiển trung tâm vì có Wi-Fi tích hợp, số lượng chân GPIO đủ cho mô hình, hỗ trợ nhiều giao tiếp như SPI, I2C, PWM và có thể lập trình bằng MicroPython. RFID MFRC522 được chọn để đọc thẻ RFID vì phổ biến, chi phí thấp và giao tiếp SPI. Servo được dùng để mô phỏng barrier vì dễ điều khiển bằng tín hiệu PWM. LCD I2C giúp hiển thị trạng thái mà không cần dùng quá nhiều chân GPIO. Buzzer và LED giúp tăng tính trực quan trong demo. Cảm biến siêu âm HC-SR04 giúp mô phỏng chức năng phát hiện vật cản hoặc xe trước cổng.
+Danh sách linh kiện
+Bảng 2.1. Danh sách linh kiện sử dụng
+[TABLE]
+STT | Linh kiện | Số lượng | Chức năng chính
+1 | ESP32 DevKit | 1 | Bộ điều khiển trung tâm, kết nối Wi-Fi, đọc RFID, điều khiển thiết bị ngoại vi
+2 | RFID MFRC522 | 1 | Đọc UID thẻ RFID
+3 | Thẻ RFID/MIFARE | 1 | Định danh khách hàng hoặc phương tiện
+4 | Servo SG90/MG996R | 2 | Điều khiển barrier đóng/mở
+5 | LCD 16x2 I2C | 1 | Hiển thị trạng thái hệ thống
+6 | Buzzer | 1 | Báo hiệu âm thanh khi thành công/lỗi
+7 | LED | 1 | Báo hiệu trạng thái trực quan
+8 | Cảm biến siêu âm HC-SR04 | 1 | Phát hiện vật cản hoặc xe gần barrier
+9 | Nguồn 5V | 1 | Cấp nguồn cho ESP32 và ngoại vi
+10 | Dây jumper, breadboard, điện trở | 1 bộ | Kết nối mạch
+11 | ESP32-CAM | 1 | Chụp ảnh biển số/phương tiện, dùng cho mô-đun mở rộng AI
+12 | Vật liệu mô hình barrier/bãi xe | 1 bộ | Mô phỏng bãi xe vật lý
+Vai trò và nguyên lý hoạt động từng linh kiện
+ESP32
+ESP32 là bộ điều khiển trung tâm tại cổng. Nhiệm vụ của ESP32 là khởi tạo các module ngoại vi, kết nối Wi-Fi, đọc UID thẻ RFID, đo khoảng cách từ cảm biến siêu âm publish sự kiện RFID lên MQTT,  nhận phản hồi và điều khiển servo, LCD, LED, buzzer. ESP32 đóng vai trò cầu nối giữa thế giới vật lý và hệ thống phần mềm.
+RFID MFRC522
+RFID MFRC522 là module đọc thẻ không tiếp xúc hoạt động ở tần số 13.56 MHz. Module giao tiếp với ESP32 qua SPI. Khi thẻ RFID được đưa vào vùng đọc, MFRC522 đọc mã UID của thẻ và gửi UID này cho ESP32. UID là dữ liệu định danh ban đầu để backend kiểm tra thẻ có tồn tại trong hệ thống hay không. Mỗi thẻ có thể gán cho một khách hàng, một phương tiện hoặc một tài khoản gửi xe.
+Thẻ RFID
+Thẻ RFID là vật mang thông tin định danh. Trong hệ thống, người dùng sử dụng thẻ để thực hiện thao tác vào/ra bãi xe. Thẻ không lưu toàn bộ thông tin khách hàng, mà chỉ cung cấp UID. Thông tin khách hàng, phương tiện, trạng thái thẻ và lịch sử gửi xe được lưu trong MongoDB. Cách thiết kế này giúp dễ quản lý, nếu thẻ bị mất có thể khóa trên phần mềm mà không cần thay đổi firmware.
+Servo
+Servo được dùng để điều khiển thanh barrier. Khi backend xác nhận yêu cầu hợp lệ, ESP32 tạo tín hiệu PWM để quay servo đến góc mở. Sau một khoảng thời gian cấu hình, hoặc sau khi cảm biến xác nhận xe đã đi qua, servo quay về góc đóng. Trong mô hình, servo giúp minh họa trực quan quá trình cổng tự động đóng/mở.
+LCD I2C
+LCD 16x2 I2C hiển thị trạng thái như READY, SCANNING, WELCOME, ACCESS DENIED, PARKING FULL, NETWORK ERROR. Việc dùng giao tiếp I2C giúp tiết kiệm chân GPIO, chỉ cần SDA và SCL. LCD giúp người dùng tại cổng biết hệ thống đang ở trạng thái nào.
+Cảm biến siêu âm HC-SR04
+Cảm biến siêu âm HC-SR04 đo khoảng cách bằng cách phát xung siêu âm và đo thời gian phản hồi. Trong hệ thống, cảm biến được dùng để phát hiện vật cản hoặc xe đang ở gần barrier. Nếu còn vật cản, ESP32 có thể trì hoãn đóng barrier để tránh va chạm. Trong mô hình đồ án, cảm biến giúp mô phỏng chức năng an toàn khi cổng hoạt động tự động.
+ESP32-CAM
+ESP32-CAM là module camera độc lập dùng để chụp ảnh phương tiện/biển số. Thiết bị chạy HTTP camera server, cung cấp endpoint /capture để chụp ảnh phục vụ OCR và /stream để căn chỉnh góc nhìn camera. ESP32-CAM không chạy YOLO hoặc PaddleOCR trực tiếp vì tài nguyên phần cứng hạn chế. Toàn bộ xử lý AI/OCR được thực hiện trên server thông qua camera_bridge.py.
+Sơ đồ kết nối phần cứng
+Bảng 2.2. Bảng kết nối chân ESP32
+[TABLE]
+Thiết bị | Chân module | Chân ESP32 | Giao tiếp
+RFID MFRC522 | SCK | GPIO 18 | SPI
+RFID MFRC522 | MOSI | GPIO 23 | SPI
+RFID MFRC522 | MISO | GPIO 19 | SPI
+RFID MFRC522 | SDA/CS | GPIO 5 | SPI
+RFID MFRC522 | RST | GPIO 4 | GPIO
+Servo | Signal | GPIO 14 | PWM
+Servo | Signal | GPIO 27 | PWM
+LED | Anode | GPIO 2 | GPIO
+Buzzer | Signal | GPIO 13 | GPIO/PWM
+HC-SR04 | Trig | GPIO 26 | GPIO output
+HC-SR04 | Echo | GPIO 35 | GPIO input
+LCD I2C | SDA | GPIO 21 | I2C
+LCD I2C | SCL | GPIO 22 | I2C
+ESP32-CAM | Wi-Fi | Không nối trực tiếp | HTTP/Wi-Fi
+Hình 2.1. Sơ đồ khối phần cứng
+Nguyên lý hoạt động tại cổng
+Trong hệ thống, ESP32 RFID/barrier, ESP32-CAM, camera_bridge.py và backend FastAPI được triển khai như các thành phần độc lập. ESP32 RFID/barrier chịu trách nhiệm đọc thẻ và điều khiển cổng. ESP32-CAM chịu trách nhiệm chụp ảnh. camera_bridge.py chạy trên server chịu trách nhiệm nhận sự kiện RFID, gọi camera, xử lý YOLO/PaddleOCR và gửi dữ liệu về backend. Backend FastAPI chịu trách nhiệm kiểm tra nghiệp vụ và quyết định mở hoặc không mở barrier.
+Khi hệ thống được cấp nguồn, ESP32 RFID/barrier khởi tạo MFRC522, LCD, servo, buzzer, LED và cảm biến HC-SR04, sau đó kết nối Wi-Fi và MQTT broker. LCD hiển thị trạng thái READY. Trong trạng thái chờ, ESP32 liên tục kiểm tra đầu đọc RFID. Khi phát hiện thẻ, thiết bị đọc UID, chống quét lặp và publish sự kiện RFID lên MQTT. Sự kiện này chứa các thông tin như card_uid, gate_id, timestamp và có thể kèm trạng thái khoảng cách nếu firmware cấu hình gửi thêm.
+camera_bridge.py subscribe topic RFID trên MQTT. Khi nhận được UID, bridge gọi ESP32-CAM tại endpoint /capture để chụp ảnh. Hệ thống thực hiện chụp burst 2 ảnh theo cấu hình mặc định BURST_COUNT=2, có thể tăng số frame nếu cần. Server chọn ảnh tốt nhất, chạy YOLOv8 để phát hiện vùng biển số, crop vùng biển số và dùng PaddleOCR để đọc ký tự. Kết quả OCR được chuẩn hóa bằng normalize và regex biển số Việt Nam.
+Sau khi có UID, biển số, ảnh và các metrics xử lý, camera_bridge.py gửi dữ liệu về FastAPI backend qua endpoint /api/v1/access-events/rfid-camera. Backend kiểm tra thẻ RFID có tồn tại và hoạt động hay không, kiểm tra biển số có khớp với phương tiện đăng ký hay không, kiểm tra slot, xác định session đang mở hoặc cần tạo mới, xử lý check-in/check-out, tính phí nếu xe ra và lưu access event cùng ảnh vào MongoDB/GridFS.
+Nếu dữ liệu hợp lệ, backend publish lệnh MQTT OPEN để ESP32 mở barrier. ESP32 nhận lệnh, điều khiển servo tương ứng, LCD hiển thị thông báo thành công, buzzer/LED phản hồi trạng thái và gửi gate_ack về hệ thống để xác nhận đã thực thi. Nếu dữ liệu không hợp lệ như thẻ chưa đăng ký, thẻ bị khóa, biển số không khớp, OCR lỗi, bãi đầy hoặc lỗi hệ thống, backend không publish OPEN; ESP32 không mở barrier và hiển thị/cảnh báo lỗi theo trạng thái nhận được.
+Hình 2.2. Lưu đồ hoạt động của ESP32 điều khiển cổng
+Hình 2.3. Lưu đồ hoạt động của ESP32-CAM
+Hình 2.4. Sơ đồ phối hợp giữa ESP32, ESP32-CAM và backend tại cổng
+Giao tiếp truyền thông IoT
+Hệ thống sử dụng kết hợp MQTT và HTTP/REST. MQTT được dùng cho luồng thời gian thực giữa ESP32 RFID/barrier, camera_bridge.py và backend. HTTP/REST được dùng cho ESP32-CAM /capture, API backend và dashboard web.
+ESP32 RFID/barrier là MQTT client. Khi đọc được UID thẻ, ESP32 publish sự kiện RFID lên MQTT topic pbl5/smartparking/rfid_scanned. camera_bridge.py subscribe topic này để nhận UID và kích hoạt quy trình chụp ảnh/nhận diện biển số. Sau khi backend xử lý dữ liệu hợp lệ, backend publish lệnh MQTT OPEN để ESP32 mở barrier. Sau khi thực hiện điều khiển cổng, ESP32 gửi gate_ack để xác nhận trạng thái barrier.
+ESP32-CAM không gửi ảnh trực tiếp theo luồng tự động. camera_bridge.py là thành phần chủ động gọi ESP32-CAM thông qua HTTP endpoint /capture để lấy ảnh JPEG phục vụ OCR. Endpoint /stream được dùng để căn chỉnh camera trong quá trình lắp đặt và kiểm thử.
+Backend FastAPI nhận dữ liệu vận hành chính từ camera_bridge.py thông qua endpoint POST /api/v1/access-events/rfid-camera. Dữ liệu gửi lên gồm UID thẻ, biển số nhận diện, ảnh chụp và các metrics của quá trình nhận diện. Backend tiếp tục kiểm tra nghiệp vụ, lưu dữ liệu, cập nhật dashboard và gửi lệnh mở cổng qua MQTT nếu hợp lệ.
+Bảng 2.3. Luồng truyền thông chính
+[TABLE]
+Thành phần gửi | Giao thức | Thành phần nhận | Dữ liệu chính
+ESP32 RFID/barrier | MQTT | FastAPI backend | card_uid, gate_id, timestamp
+camera_bridge.py | HTTP GET | ESP32-CAM | Yêu cầu /capture để lấy ảnh
+camera_bridge.py | HTTP POST | FastAPI backend | UID, biển số, ảnh, metrics
+FastAPI backend | MQTT | ESP32 RFID/barrier | Lệnh OPEN nếu hợp lệ
+ESP32 RFID/barrier | MQTT | Backend/camera bridge | gate_ack sau khi mở barrier
+Dashboard web | HTTP/REST | FastAPI backend | Dữ liệu quản lý, thống kê, access events
+Ví dụ 1. ESP32 RFID/barrier publish UID qua MQTT
+Khi người dùng quẹt thẻ RFID, firmware ESP32 đọc UID từ MFRC522 và publish UID lên topic MQTT.
+Topic:
+pbl5/smartparking/rfid_scanned
+Payload thực tế:
+{
+  "card_uid": "0xa3d6ce05",
+  "gate_id": 1,
+  "received_at": "2026-05-27T10:00:00+07:00"
+}
+Ví dụ 2. camera_bridge.py yêu cầu ESP32-CAM chụp ảnh
+Sau khi nhận UID từ MQTT, camera_bridge.py gọi ESP32-CAM để chụp ảnh. ESP32-CAM không gửi JSON lên backend, mà chỉ trả về ảnh JPEG nhị phân.
+Request:
+GET http://<ESP32_CAM_IP>/capture
+Response:
+HTTP/1.1 200 OK
+Content-Type: image/jpeg
+<binary JPEG image bytes>
+Sau khi nhận ảnh, camera_bridge.py tự tạo metadata cho từng frame để gửi kèm backend. Ví dụ metadata của một frame:
+[
+  {
+    "frame_no": 1,
+    "filename": "0xa3d6ce05_20260527_100001_frame1.jpg",
+    "captured_at": "2026-05-27T10:00:01+07:00",
+    "byte_size": 184532,
+    "quality_score": 0.86,
+    "selected_for_ocr": true,
+    "ocr_engine": "paddleocr"
+  }
+]
+Ví dụ 3. camera_bridge.py POST multipart lên FastAPI backend
+Sau khi xử lý ảnh, phát hiện biển số và OCR, camera_bridge.py gửi dữ liệu hoàn chỉnh lên backend thông qua endpoint vận hành chính:
+POST /api/v1/access-events/rfid-camera
+Dữ liệu được gửi theo dạng multipart/form-data, gồm các trường form và một hoặc nhiều file ảnh ở field images.
+{
+  "form": {
+    "card_uid": "0xa3d6ce05",
+    "gate_id": "1",
+    "gate_direction": "auto",
+    "capture_batch_id": "0xa3d6ce05_20260527_100001",
+    "ocr_plate": "43A12345",
+    "ocr_confidence": "0.8620",
+    "frame_metadata": "[...]",
+    "processing_metrics": "{...}"
+  },
+  "files": [
+    {
+      "field": "images",
+      "filename": "0xa3d6ce05_20260527_100001_frame1.jpg",
+      "content_type": "image/jpeg"
+    }
+  ]
+}
+Endpoint này là luồng xử lý chính cho xe vào/ra trong hệ thống V3. Backend nhận UID, biển số, ảnh và metrics, sau đó kiểm tra RFID, biển số, slot, session và quyết định có mở barrier hay không.
+Ví dụ 4. Backend publish lệnh mở barrier qua MQTT
+Nếu dữ liệu hợp lệ, backend publish lệnh OPEN lên MQTT để ESP32 điều khiển barrier.
+Topic:
+pbl5/smartparking/gate
+Payload:
+{
+  "schema": "smartparking.gate_command.v1",
+  "command": "OPEN",
+  "command_id": "7f5d8f3c9a2b4b9ba1e7a3f44f5d6c21",
+  "gate_id": 1,
+  "event_id": "E000001",
+  "session_id": "S000001",
+  "action": "entry",
+  "issued_at": "2026-05-27T10:00:02+07:00"
+}
+Ví dụ 5. ESP32 gửi gate_ack sau khi chạy servo
+Sau khi ESP32 thực hiện lệnh mở barrier, thiết bị gửi bản tin ACK về backend để xác nhận đã thực thi lệnh.
+Topic:
+pbl5/smartparking/gate_ack
+Payload:
+{
+  "schema": "smartparking.gate_ack.v1",
+  "command_id": "7f5d8f3c9a2b4b9ba1e7a3f44f5d6c21",
+  "command": "OPEN",
+  "status": "opened",
+  "device_id": "esp32-gate-01-abc123",
+  "gate_id": 1,
+  "action": "entry",
+  "physical_gate": "entry",
+  "event_id": "E000001",
+  "session_id": "S000001",
+  "opened_at_ms": 1234567
+}
+Bản tin ACK giúp backend biết rằng lệnh mở cổng đã được ESP32 nhận và thực hiện. Trạng thái này có thể được ghi nhận để phục vụ theo dõi hoạt động cổng và hiển thị trên dashboard.
+Ví dụ 6. Backend trả về khi xe được phép vào
+Khi backend xử lý endpoint /api/v1/access-events/rfid-camera và xác định dữ liệu hợp lệ, response có thể có dạng:
+{
+  "success": true,
+  "decision": "accepted",
+  "action": "entry",
+  "open_gate": true,
+  "session_id": "S000001",
+  "slot_id": "A01",
+  "review_required": false,
+  "gate_command_id": "7f5d8f3c9a2b4b9ba1e7a3f44f5d6c21",
+  "gate_ack_status": "pending",
+  "event": {
+    "event_id": "E000001",
+    "card_uid": "0xa3d6ce05",
+    "gate_id": 1,
+    "capture_batch_id": "0xa3d6ce05_20260527_100001",
+    "event_type": "entry",
+    "decision": "accepted",
+    "ocr_plate": "43A12345",
+    "expected_plate": "43A12345",
+    "gate_open_sent": true
+  }
+}
+Trong response này, trường decision cho biết kết quả xử lý của backend, trường open_gate cho biết có gửi lệnh mở cổng hay không, còn gate_command_id được dùng để liên kết với bản tin MQTT OPEN và ACK từ ESP32.
+Xử lý lỗi truyền thông
+Trong quá trình vận hành, hệ thống có thể gặp lỗi ở nhiều điểm: ESP32 mất Wi-Fi hoặc mất kết nối MQTT, MQTT broker không phản hồi, camera_bridge.py không nhận được UID, ESP32-CAM không trả ảnh từ /capture, YOLO không phát hiện được biển số, PaddleOCR đọc sai ký tự, backend lỗi, MongoDB/GridFS lỗi hoặc ESP32 không gửi gate_ack sau khi nhận OPEN.
+Đối với ESP32 RFID/barrier, nếu không kết nối được Wi-Fi hoặc MQTT broker, thiết bị hiển thị WIFI ERROR hoặc MQTT ERROR trên LCD, phát âm báo lỗi và thử kết nối lại theo chu kỳ. Khi chưa nhận được lệnh OPEN từ backend, ESP32 không tự mở barrier. Cách xử lý này giúp tránh trường hợp cổng mở khi hệ thống chưa xác thực dữ liệu.
+Đối với ESP32-CAM, lỗi thường gặp gồm camera khởi tạo thất bại, timeout khi gọi /capture, ảnh bị mờ hoặc ảnh không hợp lệ. Khi gặp lỗi này, camera_bridge.py ghi log, có thể thử chụp lại trong giới hạn cấu hình và gửi trạng thái lỗi về backend nếu không lấy được ảnh hợp lệ.
+Đối với camera_bridge.py, nếu YOLO không phát hiện được vùng biển số, hệ thống có thể dùng fallback OCR toàn ảnh trong chế độ test/dev. Nếu không nhận diện được biển số, bridge vẫn có thể gửi event trạng thái lỗi để backend lưu lại và dashboard hiển thị cho người quản lý kiểm tra.
+Đối với backend, các lỗi như thẻ không tồn tại, thẻ bị khóa, biển số không khớp, không còn slot trống, không tìm thấy session đang mở hoặc lỗi database phải được trả về bằng trạng thái rõ ràng. Khi dữ liệu không hợp lệ, backend không publish MQTT OPEN, do đó barrier không mở. Nếu đã publish OPEN nhưng không nhận được gate_ack từ ESP32 trong thời gian cấu hình, backend có thể ghi nhận trạng thái lệnh mở cổng chưa xác nhận để phục vụ kiểm tra.
+An toàn vận hành barrier
+Barrier tự động cần tránh đóng khi xe hoặc vật cản còn ở khu vực cổng. Vì vậy, ESP32 sử dụng cảm biến siêu âm HC-SR04 để kiểm tra khoảng cách trước khi đóng barrier. Nếu khoảng cách nhỏ hơn ngưỡng cấu hình, ESP32 tiếp tục giữ cổng mở hoặc trì hoãn thao tác đóng. Khi khoảng cách lớn hơn ngưỡng trong một khoảng thời gian ổn định, ESP32 mới điều khiển servo đóng barrier.
+Bảng chi phí linh kiện
+Bảng 2.4. Bảng chi phí linh kiện
+[TABLE]
+STT | Linh kiện | Số lượng | Đơn giá thực tế | Thành tiền
+1 | ESP32 DevKit | 1 | 160.000 | 160.000
+2 | RFID MFRC522 + thẻ RFID | 1 bộ | 100.000 | 100.000
+3 | Servo SG90 | 2 | 60.000 | 120.000
+4 | LCD 16x2 I2C | 1 | 80.000 | 80.000
+5 | HC-SR04 | 1 | 30.000 | 30.000
+6 | Buzzer + LED + điện trở | 1 bộ | 60.000 | 60.000
+7 | Dây jumper + breadboard | 1 bộ | 80.000 | 80.000
+8 | ESP32-CAM | 1 | 280.000 | 280.000
+9 | Vật liệu mô hình bãi xe | 1 bộ | 100.000 | 100.000
+ | Tổng cộng (VNĐ) |  |  | 1.010.000
+Giải pháp AI/KHDL
+Vai trò của AI/KHDL trong hệ thống
+Trong hệ thống bãi xe thông minh, thẻ RFID giúp định danh nhanh người dùng hoặc phương tiện, tuy nhiên nếu chỉ sử dụng RFID thì hệ thống chưa có khả năng kiểm chứng trực quan phương tiện thực tế. Trong trường hợp người dùng cầm nhầm thẻ, thẻ bị mất hoặc có hành vi sử dụng thẻ không đúng xe đã đăng ký, hệ thống chỉ dựa vào UID thẻ có thể dẫn đến sai lệch trong quá trình kiểm soát xe vào/ra.
+Để tăng độ tin cậy, hệ thống tích hợp mô-đun nhận diện biển số xe bằng AI. Mô-đun này sử dụng ESP32-CAM để chụp ảnh xe tại thời điểm quẹt thẻ, sau đó gửi ảnh về server để xử lý. Việc nhận diện biển số không được thực hiện trực tiếp trên ESP32-CAM do tài nguyên phần cứng của ESP32-CAM hạn chế, mà được xử lý theo hướng server-side OCR. Cụ thể, server sử dụng mô hình YOLO để phát hiện vùng biển số và PaddleOCR để nhận dạng ký tự biển số.
+Kết quả nhận diện biển số được gửi cùng UID thẻ RFID về backend FastAPI. Backend sử dụng dữ liệu này để xử lý nghiệp vụ xe vào/ra, lưu access event, lưu ảnh chụp và hiển thị trên giao diện quản lý. Nhờ đó, hệ thống có thể xác thực phương tiện bằng hai nguồn dữ liệu: UID thẻ RFID và biển số xe nhận diện từ ảnh.
+Phương án nhận diện biển số đã triển khai
+Phương án cuối cùng của hệ thống là xử lý nhận diện biển số ở phía server. ESP32-CAM chỉ đảm nhiệm nhiệm vụ chụp ảnh thông qua URL /capture, còn toàn bộ quá trình phát hiện biển số và OCR được thực hiện trên máy chủ.
+Trong kiến trúc này, camera_bridge.py đóng vai trò cầu nối giữa sự kiện RFID, ESP32-CAM, mô hình YOLO, PaddleOCR và backend FastAPI. Khi nhận được sự kiện quẹt thẻ qua MQTT, bridge tự động gọi ESP32-CAM để chụp ảnh, xử lý nhận diện biển số và gửi dữ liệu hoàn chỉnh về backend.
+Hình 2.5. Luồng xử lí nhận diện biển số
+Vai trò các thành phần trong mô-đun AI
+Bảng 2.5. Vai trò các thành phần trong mô-đun nhận diện biển số
+[TABLE]
+Thành phần | Vai trò
+ESP32 RFID | Đọc UID thẻ RFID khi xe vào/ra
+MQTT broker | Truyền sự kiện quẹt thẻ từ ESP32 RFID về server
+ESP32-CAM | Chụp ảnh xe/biển số thông qua URL /capture
+camera_bridge.py | Cầu nối giữa MQTT, ESP32-CAM, YOLO/OCR và backend
+YOLO | Phát hiện vùng biển số trong ảnh
+PaddleOCR | Nhận dạng ký tự biển số từ vùng ảnh đã cắt
+FastAPI backend | Xử lý nghiệp vụ vào/ra, lưu access event, lưu ảnh
+MongoDB/GridFS | Lưu dữ liệu sự kiện và ảnh capture
+Frontend access-events.html | Hiển thị lịch sử quẹt thẻ, biển số và ảnh
+Trong quá trình vận hành, camera_bridge.py được cấu hình để chạy độc lập trên server. Bridge kết nối tới MQTT broker và subscribe topic pbl5/smartparking/rfid_scanned. Khi có UID thẻ được gửi lên topic này, bridge bắt đầu quy trình chụp ảnh và nhận diện biển số.
+Quy trình xử lý của camera_bridge.py
+camera_bridge.py là thành phần trung gian quan trọng trong hệ thống. Thành phần này không chỉ nhận sự kiện RFID mà còn điều phối toàn bộ quá trình chụp ảnh và nhận diện biển số. Khi bridge khởi động, chương trình thực hiện các bước chính sau:
+Hình 2.6. Lưu đồ xử lý của camera_bridge.py
+Dữ liệu huấn luyện mô hình phát hiện biển số
+Để xây dựng mô hình phát hiện vùng biển số, hệ thống sử dụng dữ liệu ảnh được lấy từ hai thư mục local trong project. Hai nguồn dữ liệu này gồm:
+D:\PBL5\PBL5-SmartParking_ESP32\car_long\car_long
+D:\PBL5\PBL5-SmartParking_ESP32\CarTGMT\CarTGMT
+Tổng số ảnh đầu vào ban đầu là 1944 ảnh. Sau quá trình lọc dữ liệu và tạo nhãn tự động, số ảnh dùng được là 1458 ảnh, số ảnh bị bỏ qua là 486 ảnh. Các ảnh bị bỏ qua chủ yếu là những ảnh không đáp ứng điều kiện xử lý hoặc không tạo được vùng nhãn phù hợp cho bài toán phát hiện biển số.
+Tập dữ liệu sau xử lý được chia thành hai phần chính:
+Bảng 2.6. Phân chia tập dữ liệu huấn luyện mô hình phát hiện biển số
+[TABLE]
+Tập dữ liệu | Số lượng ảnh | Mục đích
+Train | 1147 | Dùng để huấn luyện mô hình YOLO
+Validation | 311 | Dùng để đánh giá mô hình trong quá trình huấn luyện
+Test | Chưa tách riêng | Chưa sử dụng tập kiểm thử độc lập ở giai đoạn hiện tại
+Tổng ảnh dùng được | 1458 | Dữ liệu sau lọc và tạo nhãn
+Dữ liệu bao gồm ảnh phương tiện có biển số xe Việt Nam, trong đó có các ảnh thuộc ngữ cảnh bãi xe, check-in và check-out. Tập dữ liệu này được sử dụng để huấn luyện mô hình phát hiện vùng biển số, không dùng trực tiếp để huấn luyện mô hình OCR ký tự. Do dữ liệu hiện tại chưa có metadata chính thức về điều kiện ngày/đêm, góc chụp, loại xe hoặc môi trường ánh sáng, báo cáo không khẳng định chi tiết các thuộc tính này nếu chưa được rà soát thủ công.
+Ở giai đoạn hiện tại, dataset ban đầu chưa có nhãn YOLO thủ công. Nhóm không sử dụng LabelImg, Roboflow hoặc CVAT để gán nhãn thủ công. Thay vào đó, dự án sử dụng script xử lý ảnh dựa trên OpenCV heuristic để sinh nhãn tự động, hay còn gọi là pseudo-label, cho vùng biển số. Sau bước xử lý, nhãn được lưu theo định dạng YOLO .txt.
+Thư mục dữ liệu huấn luyện sau xử lý được lưu tại:
+D:\PBL5\PBL5-PlateTrainer\datasets\license_plate
+Việc sử dụng pseudo-label giúp nhóm nhanh chóng tạo được bộ dữ liệu ban đầu để huấn luyện thử nghiệm mô hình phát hiện biển số. Tuy nhiên, do nhãn chưa được gán thủ công và kiểm chứng hoàn toàn, chất lượng nhãn vẫn có thể còn sai lệch.
+Huấn luyện mô hình YOLO phát hiện biển số
+Sau khi chuẩn bị dữ liệu, nhóm tiến hành huấn luyện mô hình YOLO để phát hiện vùng biển số trong ảnh. Mục tiêu của mô hình là xác định bounding box bao quanh biển số xe, từ đó cắt vùng biển số và chuyển sang bước nhận dạng ký tự bằng PaddleOCR.
+Phiên bản YOLO được sử dụng là YOLOv8 thông qua thư viện Ultralytics 8.0.223. Model khởi tạo ban đầu là yolov8n.pt. Đây là phiên bản YOLO nhỏ, có tốc độ xử lý nhanh, phù hợp với bài toán thử nghiệm và tích hợp trong pipeline server-side của hệ thống bãi xe thông minh.
+Cấu hình huấn luyện được sử dụng như sau:
+Bảng 2.7. Cấu hình huấn luyện mô hình YOLO
+[TABLE]
+Tham số | Giá trị
+Phiên bản YOLO | YOLOv8 - Ultralytics 8.0.223
+Model khởi tạo | yolov8n.pt
+Số epoch | 80
+Image size | 640
+Batch size | 4
+Thiết bị huấn luyện | GPU CUDA:0
+Python | 3.11.15
+PyTorch | 2.5.1 + CUDA 12.1
+GPU | NVIDIA GeForce RTX 3050 Laptop GPU 4GB
+Thời gian huấn luyện | 80 epochs completed in 0.489 hours
+Mô hình license_plate_detector.pt sau huấn luyện được tích hợp vào chương trình camera_bridge.py. Khi hệ thống nhận được sự kiện RFID qua MQTT, camera_bridge.py gọi ESP32-CAM để chụp ảnh, sau đó đưa ảnh qua mô hình YOLO để phát hiện vùng biển số. Nếu phát hiện thành công, vùng biển số được crop và chuyển sang PaddleOCR để đọc ký tự.
+Hình 2.7. Quy trình huấn luyện và tích hợp mô hình.
+Đánh giá mô hình YOLO phát hiện biển số
+Sau khi huấn luyện, mô hình YOLOv8 được đánh giá trên tập validation gồm 311 ảnh với 311 instance biển số. Các chỉ số đánh giá gồm Precision, Recall, mAP50 và mAP50-95. Kết quả cụ thể như sau:
+Bảng 2.8. Kết quả đánh giá mô hình YOLO
+[TABLE]
+Chỉ số | Giá trị
+Validation images | 311
+Instances | 311
+Precision | 0.487
+Recall | 0.408
+mAP50 | 0.372
+mAP50-95 | 0.255
+Kết quả thấy mô hình đã đủ để kiểm thử pipeline YOLO  ̶ ˃ CROP  ̶ ˃ PaddleOCR  ̶ ˃ backend trong phạm vi demo/prototype. Tuy nhiên, các chỉ số Precision, Recall và mAP chưa cao, nên mô hình hiện tại chưa phù hợp để đánh giá như một mô hình production có độ chính xác cao.
+Nguyên nhân chính nằm ở chất lượng nhãn huấn luyện. Dataset hiện tại sử dụng pseudo-label được sinh tự động bằng OpenCV heuristic, chưa phải nhãn thủ công chuẩn được kiểm tra lại bằng LabelImg, CVAT hoặc Roboflow. Một số bounding box có thể bị lệch, thiếu hoặc nhận nhầm vùng ảnh khác, từ đó ảnh hưởng trực tiếp đến kết quả huấn luyện.
+Để cải thiện mô hình, cần gán nhãn thủ công lại dữ liệu, bổ sung ảnh thực tế từ ESP32-CAM, tách tập test độc lập, tăng số lượng ảnh trong nhiều điều kiện ánh sáng/góc chụp và thử nghiệm các cấu hình YOLO phù hợp hơn.
+Tích hợp YOLO với PaddleOCR trong camera_bridge.py
+Trong hệ thống runtime, mô hình YOLO sau huấn luyện được tích hợp với PaddleOCR trong file camera_bridge.py. Đây là chương trình chạy riêng trên server, đóng vai trò cầu nối giữa MQTT, ESP32-CAM, mô hình AI/OCR và backend FastAPI.
+File model được sử dụng khi chạy hệ thống là:
+backend_v3\models\license_plate_detector.pt
+Hình 2.8. Luồng xử lý runtime nhận diện biển số
+Khi ESP32 RFID đọc được UID thẻ, sự kiện quẹt thẻ được gửi lên MQTT. camera_bridge.py đang subscribe topic MQTT tương ứng để nhận UID. Sau khi nhận sự kiện, bridge gọi ESP32-CAM tại endpoint /capture để chụp ảnh. Hệ thống chụp 3 ảnh liên tiếp nhằm tăng khả năng chọn được ảnh rõ, giảm ảnh hưởng của rung, mờ hoặc thời điểm chụp chưa tốt.
+Sau khi nhận ảnh từ ESP32-CAM, server đánh giá chất lượng ảnh và chọn ảnh tốt nhất để đưa vào mô hình YOLO. Nếu YOLO phát hiện được vùng biển số, hệ thống lấy bounding box tốt nhất, crop vùng biển số, thêm padding nhẹ để tránh mất ký tự ở rìa biển số, sau đó đưa ảnh crop vào PaddleOCR. PaddleOCR đọc ký tự trên vùng biển số và trả về chuỗi ký tự nhận diện được.
+Kết quả OCR tiếp tục được chuẩn hóa bằng bước normalize và kiểm tra bằng regex theo định dạng biển số Việt Nam. Bước này giúp loại bỏ khoảng trắng, dấu gạch, dấu chấm hoặc ký tự không cần thiết, đồng thời lọc ra chuỗi có khả năng là biển số hợp lệ.
+Ví dụ, kết quả OCR ban đầu có thể là: 43A - 123.45
+Sau khi chuẩn hóa, hệ thống chuyển về dạng: 43A12345
+Nếu YOLO không phát hiện được vùng biển số, hệ thống có cơ chế fallback trong chế độ test/dev. Khi đó, PaddleOCR được áp dụng trên toàn ảnh để cố gắng tìm chuỗi ký tự giống biển số.
+Cấu hình liên quan là: PLATE_DETECTOR_FALLBACK_FULL_IMAGE=true
+Cơ chế fallback giúp tăng khả năng có kết quả trong giai đoạn thử nghiệm, đặc biệt khi mô hình YOLO còn yếu hoặc ảnh chụp chưa tối ưu. Tuy nhiên, trong môi trường production, fallback OCR toàn ảnh có thể làm tăng nguy cơ nhận nhầm chữ rác trong ảnh.
+Sau khi nhận diện và chuẩn hóa biển số, camera_bridge.py gửi dữ liệu gồm UID thẻ, biển số nhận diện, ảnh chụp và thông tin sự kiện lên backend FastAPI. Backend tiếp tục xử lý nghiệp vụ entry/exit, lưu access event, lưu ảnh và quyết định có cho phép mở barrier hay không. Nếu dữ liệu hợp lệ, backend publish MQTT OPEN để thiết bị điều khiển cổng mở barrier.
+Hình 2.9. Luồng tích hợp giữa YOLO, PaddleOCR và backend
+Giải pháp phần mềm
+Kiến trúc phần mềm tổng thể
+Phần mềm của hệ thống gồm backend FastAPI, MongoDB/GridFS, camera_bridge.py, MQTT broker và dashboard web. Backend đóng vai trò trung tâm xử lý nghiệp vụ, nhưng không trực tiếp nhận UID từ ESP32 theo HTTP trong luồng vận hành chính. Thay vào đó, ESP32 publish UID qua MQTT, camera_bridge.py xử lý ảnh/biển số và gửi access event hoàn chỉnh về backend.
+camera_bridge.py là service trung gian giữa IoT và backend. Service này nhận sự kiện RFID từ MQTT, gọi ESP32-CAM /capture, xử lý YOLO + PaddleOCR, sau đó POST dữ liệu về backend. Backend kiểm tra dữ liệu, cập nhật database, điều khiển trạng thái session và publish MQTT OPEN để ESP32 mở barrier.
+Dashboard web giao tiếp với backend thông qua REST API để hiển thị dashboard, camera events, khách hàng, phương tiện, map chỗ đỗ, thiết kế bãi đỗ, gói cước, lịch sử và doanh thu. MongoDB/GridFS lưu dữ liệu nghiệp vụ và ảnh capture.
+Hình 2.10. Kiến trúc phần mềm
+Backend FastAPI
+FastAPI được chọn vì có hiệu năng tốt, hỗ trợ khai báo dữ liệu bằng Pydantic, tự động sinh tài liệu API dạng Swagger UI và phù hợp để xây dựng REST API. Trong hệ thống này, backend có ba nhóm API chính:
+API cho thiết bị IoT: nhận dữ liệu quẹt thẻ, trả kết quả cho ESP32.
+API cho dashboard: CRUD khách hàng, xe, thẻ, slot, gói cước và lịch sử.
+API thống kê: số xe đang đỗ, số chỗ trống, tỷ lệ lấp đầy, doanh thu.
+Backend nhận dữ liệu từ ESP32, kiểm tra tính hợp lệ, truy vấn MongoDB và thực hiện logic nghiệp vụ. Kết quả trả về cần rõ ràng để firmware có thể hiển thị đúng trạng thái và điều khiển barrier.
+Cơ sở dữ liệu MongoDB
+MongoDB được chọn vì dữ liệu hệ thống có dạng tài liệu linh hoạt, dễ lưu thông tin khách hàng, xe, thẻ, phiên gửi xe và log. Mỗi collection lưu một nhóm dữ liệu nghiệp vụ.
+Bảng 2.9. Danh sách collection MongoDB
+[TABLE]
+Collection / Storage | Vai trò | Trường dữ liệu chính
+customers | Lưu thông tin khách hàng | customer_id, full_name, phone, email, status, created_at
+vehicles | Lưu thông tin phương tiện | vehicle_id, customer_id, plate_number, type, brand, color, status
+rfid_cards | Lưu thẻ RFID | card_uid, customer_id, vehicle_id, status, issued_at
+sessions | Lưu phiên gửi xe | session_id, card_uid, vehicle_id, slot_id, entry_time, exit_time, status, fee
+parking_slots | Lưu trạng thái chỗ đỗ | slot_id, slot_code, zone, status, current_session_id
+parking_layouts | Lưu layout/sơ đồ bãi đỗ | layout_id, name, boundary, obstacles, scale, slots, created_at
+packages | Lưu gói gửi xe | package_id, customer_id, vehicle_id, start_date, end_date, status
+transactions | Lưu giao dịch | transaction_id, session_id, package_id, amount, method, status, paid_at
+pending_scans | Lưu thẻ chờ đăng ký | card_uid, gate_id, scanned_at, status
+parking_events | Lưu sự kiện vào/ra | event_id, card_uid, recognized_plate, action, status, gate_id, timestamp
+camera_captures | Lưu metadata ảnh và OCR | capture_id, event_id, image_id, recognized_plate, confidence, metrics
+camera_images GridFS | Lưu file ảnh capture | _id, filename, contentType, uploadDate, metadata
+Thiết kế dữ liệu chi tiết
+Collection customers
+Collection customers lưu thông tin người gửi xe hoặc chủ phương tiện. Mỗi khách hàng có một mã định danh riêng. Các thông tin cơ bản gồm họ tên, số điện thoại, email, trạng thái và thời gian tạo.
+Collection vehicles
+Collection vehicles lưu thông tin phương tiện. Một khách hàng có thể có nhiều phương tiện. Biển số là dữ liệu quan trọng để đối chiếu với kết quả nhận diện từ camera.
+Collection rfid_cards
+Collection này lưu UID thẻ RFID và trạng thái thẻ. Thẻ có thể ở trạng thái active, inactive, lost hoặc blocked.
+Collection sessions
+Collection sessions là trung tâm của nghiệp vụ gửi xe. Khi xe vào, backend tạo session mới với trạng thái in_progress. Khi xe ra, backend cập nhật exit_time, tính phí và chuyển trạng thái thành completed.
+Ví dụ cấu trúc collection sessions :
+{
+  "session_id": "SES001",
+  "card_uid": "A1B2C3D4",
+  "customer_id": "CUS001",
+  "vehicle_id": "VEH001",
+  "slot_id": "SLOT_A01",
+  "entry_time": "2026-05-27T08:00:00",
+  "exit_time": null,
+  "status": "in_progress",
+  "fee": 0,
+  "entry_plate": "43A12345",
+  "exit_plate": null
+}
+Collection parking_slots
+Collection này lưu trạng thái từng chỗ đỗ. Trạng thái có thể là available, occupied, reserved hoặc maintenance.
+Collection transactions
+Collection transactions lưu giao dịch thanh toán khi xe ra hoặc khi khách hàng mua gói.
+Collection camera_captures
+Collection camera_captures lưu metadata của ảnh được chụp từ ESP32-CAM và kết quả xử lý OCR tương ứng. Ảnh thực tế được lưu trong GridFS, còn collection này lưu thông tin mô tả như mã ảnh, tên file, biển số nhận diện, độ tin cậy OCR, chất lượng ảnh, bounding box biển số và thời gian xử lý. Dữ liệu này được dùng để hiển thị tại trang Camera events và liên kết với parking_events để kiểm tra từng lượt xe vào/ra.
+Collection parking_events
+Collection parking_events lưu lịch sử các sự kiện xe vào/ra được backend xử lý sau khi nhận dữ liệu từ camera_bridge.py. Mỗi bản ghi thể hiện một lần quẹt thẻ RFID kèm kết quả nhận diện biển số, quyết định của backend, trạng thái mở cổng và thông tin liên kết với session. Collection này giúp dashboard hiển thị lịch sử access events và hỗ trợ truy vết khi có lỗi như thẻ không hợp lệ, biển số không khớp hoặc bãi xe đầy.
+Ví dụ cấu trúc collection parking_events:
+{
+  "event_id": "E000001",
+  "card_uid": "A1B2C3D4",
+  "gate_id": 1,
+  "gate_direction": "auto",
+  "event_type": "entry",
+  "decision": "accepted",
+  "reason": null,
+  "customer_id": "CUS001",
+  "vehicle_id": "VEH001",
+  "session_id": "SES001",
+  "slot_id": "SLOT_A01",
+  "ocr_plate": "43A12345",
+  "expected_plate": "43A12345",
+  "capture_batch_id": "A1B2C3D4_20260527_080000",
+  "gate_open_sent": true,
+  "gate_command_id": "7f5d8f3c9a2b4b9ba1e7a3f44f5d6c21",
+  "gate_ack_status": "pending",
+  "created_at": "2026-05-27T08:00:02"
+}
+Thiết kế API
+Bảng 2.10. Danh sách API chính
+[TABLE]
+Nhóm API | Endpoint | Phương thức | Mục đích
+Access Events | /api/v1/access-events/rfid-camera | POST | Endpoint vận hành chính, nhận UID + biển số + ảnh + metrics từ camera_bridge.py để xử lý vào/ra.
+Access Events | /api/v1/access-events/events | GET | Lấy danh sách sự kiện access events để frontend hiển thị.
+Access Events | /api/v1/access-events/captures | GET | Lấy danh sách ảnh capture/OCR metadata.
+RFID | /api/v1/rfid/latest-scan | GET | Lấy lần quẹt thẻ gần nhất, phục vụ đăng ký/thử nghiệm.
+RFID | /api/v1/rfid/register-card | POST | Đăng ký thẻ RFID cho khách hàng/phương tiện.
+Slots | /api/v1/slots | GET/POST | Quản lý danh sách slot và trạng thái chỗ đỗ.
+Slots/Layout | /api/v1/slots/generate-layout | POST | Sinh layout chỗ đỗ từ thông tin thiết kế bãi.
+Slots/Layout | /api/v1/slots/confirm-layout | POST | Xác nhận layout chỗ đỗ để sử dụng trong vận hành.
+Customers | /api/v1/customers | GET/POST | Danh sách/tạo khách hàng.
+Vehicles | /api/v1/vehicles | GET/POST | Quản lý phương tiện và biển số.
+Sessions | /api/v1/sessions | GET | Xem lịch sử phiên gửi xe.
+Packages | /api/v1/packages | GET/POST | Quản lý gói gửi xe.
+Health | /health | GET | Kiểm tra trạng thái backend và kết nối hệ thống.
+Luồng nghiệp vụ RFID-camera
+Luồng bắt đầu từ sự kiện RFID qua MQTT và kết thúc bằng lệnh MQTT OPEN từ backend.
+ESP32 RFID đọc UID thẻ bằng MFRC522.
+ESP32 publish sự kiện RFID lên MQTT topic pbl5/smartparking/rfid_scanned.
+camera_bridge.py nhận UID, gọi ESP32-CAM /capture để chụp ảnh.
+camera_bridge.py xử lý YOLO + PaddleOCR, chuẩn hóa biển số và gửi
+UID + biển số + ảnh về /api/v1/access-events/rfid-camera.
+Backend kiểm tra thẻ RFID có tồn tại và active hay không.
+Backend kiểm tra biển số nhận diện có khớp với phương tiện đăng ký hay không.
+Backend kiểm tra trạng thái slot và session hiện tại.
+Nếu xe chưa có session đang mở, backend xử lý check-in, gán slot và lưu ảnh lúc vào.
+Nếu xe có session đang mở, backend xử lý check-out, tính phí, giải phóng slot
+và lưu ảnh lúc ra.
+Nếu hợp lệ, backend publish MQTT OPEN để ESP32 mở barrier.
+ESP32 thực hiện mở barrier và gửi gate_ack để xác nhận.
+Frontend hiển thị event, ảnh, biển số, trạng thái xử lý và dữ liệu bãi xe.
+Thiết kế chức năng sinh sơ đồ bãi đỗ bán tự động
+Hệ thống được bổ sung chức năng thiết kế sơ đồ bãi đỗ bán tự động nhằm hỗ trợ người quản trị tạo nhanh layout các vị trí đỗ xe dựa trên mặt bằng thực tế. Chức năng này được triển khai tại trang Thiết kế bãi đỗ, cho phép người dùng upload ảnh nền hoặc bản vẽ mặt bằng, sau đó vẽ ranh giới bãi đỗ, khai báo vật cản nếu có, đặt tỷ lệ thực tế và yêu cầu backend sinh các phương án bố trí slot phù hợp.
+Điểm quan trọng của chức năng này là hệ thống không tự động quét diện tích bằng camera hoặc cảm biến. Thay vào đó, hệ thống hoạt động theo hướng bán tự động: người dùng cung cấp dữ liệu đầu vào bằng cách vẽ ranh giới mặt bằng, vùng vật cản và tỷ lệ mét/pixel. Backend sử dụng thuật toán hình học để xử lý các dữ liệu này và đề xuất sơ đồ chỗ đỗ phù hợp.
+Luồng hoạt động của chức năng thiết kế sơ đồ bãi đỗ gồm các bước chính:
+Người dùng truy cập trang Thiết kế bãi đỗ.
+Upload ảnh nền hoặc bản vẽ mặt bằng.
+Vẽ polygon ranh giới khu vực bãi đỗ.
+Vẽ polygon vật cản nếu có.
+Đặt tỷ lệ thực tế theo mét/pixel.
+Chọn loại slot, ví dụ ô tô kích thước 2.5 x 5.0 m hoặc xe máy kích thước 1.0 x 2.0 m.
+Nhập danh sách góc thử, mặc định gồm 0, 15, 30, 45, 60, 75 và 90 độ.
+Bấm Tạo preview để backend sinh nhiều phương án bố trí slot.
+Người dùng xem trước các phương án và chọn phương án phù hợp.
+Bấm Xác nhận lưu để lưu layout vào cơ sở dữ liệu.
+Trang Parking Map hiển thị layout đã lưu cùng trạng thái thực tế của từng slot.
+Backend nhận dữ liệu từ frontend gồm ranh giới bãi đỗ, danh sách vật cản, tỷ lệ mét/pixel, loại slot, kích thước slot, chiều rộng lối đi và các góc bố trí cần thử. Sau đó backend sử dụng thuật toán hình học polygon để chuyển vùng ranh giới thành khu vực hợp lệ, loại trừ các vật cản, kiểm tra va chạm với ranh giới/vật cản và sinh các vị trí slot nằm hoàn toàn trong vùng cho phép.
+Thuật toán tối ưu layout thử nhiều góc bố trí khác nhau để tìm phương án có số lượng slot hợp lệ cao hơn. Với mỗi góc thử, hệ thống sinh lưới các slot theo kích thước đã cấu hình, kiểm tra từng slot có nằm trong boundary polygon hay không, có giao với obstacle polygon hay không, sau đó lọc ra các slot hợp lệ. Kết quả trả về gồm số lượng slot, góc bố trí, danh sách tọa độ polygon của từng slot và metadata phục vụ hiển thị trên giao diện.
+Sau khi người dùng chọn phương án và xác nhận lưu, backend ghi dữ liệu từng vị trí đỗ vào collection parking_slots, đồng thời lưu metadata của layout như ranh giới, vật cản, tỷ lệ, kích thước canvas và layout active vào collection parking_layouts. Trang Parking Map sử dụng dữ liệu này để render sơ đồ bãi đỗ thực tế, bao gồm boundary, obstacle và trạng thái từng slot như available, occupied, reserved hoặc maintenance.
+Bảng 2.11. Các thành phần trong chức năng thiết kế sơ đồ bãi đỗ bán tự động
+[TABLE]
+Thành phần | Vai trò
+Ảnh/bản vẽ mặt bằng | Là ảnh nền để người dùng vẽ ranh giới và bố trí sơ đồ
+Boundary polygon | Xác định ranh giới hợp lệ của khu vực bãi đỗ
+Obstacle polygon | Xác định vùng vật cản không được đặt slot
+Scale factor | Quy đổi pixel sang mét để tính kích thước slot thực tế
+Slot config | Khai báo loại xe, kích thước slot và chiều rộng lối đi
+Danh sách góc thử | Cho phép thuật toán thử nhiều hướng bố trí slot khác nhau
+Layout optimizer | Sinh và đánh giá các phương án bố trí slot
+parking_slots | Lưu từng vị trí đỗ sau khi người dùng xác nhận
+parking_layouts | Lưu metadata ranh giới, vật cản, tỷ lệ và layout active
+Parking Map | Hiển thị layout đã lưu cùng trạng thái vận hành thực tế
+Chức năng này giúp hệ thống linh hoạt hơn so với cách tạo slot thủ công. Người quản trị có thể dựa trên mặt bằng thực tế để tạo layout phù hợp, đồng thời vẫn có quyền xem trước và lựa chọn phương án trước khi lưu chính thức. Đây là cách tiếp cận phù hợp cho mô hình đồ án vì vừa thể hiện được khả năng tự động hóa bằng thuật toán, vừa tránh phụ thuộc vào các hệ thống đo đạc hoặc quét diện tích phức tạp.
+Hình 2.11. Luồng thiết kế sơ đồ bãi đỗ bán tự động
+Kết quả
+Môi trường thực nghiệm
+Hệ thống được kiểm thử trong môi trường mạng nội bộ, gồm khối phần cứng tại cổng, ESP32-CAM, backend FastAPI, MongoDB, MQTT broker, camera_bridge và dashboard web.RFID được publish qua MQTT, camera_bridge chụp ảnh từ ESP32-CAM, sau đó backend ra quyết định vào/ra và gửi lệnh mở barrier qua MQTT.
+Bảng 3.1. Môi trường thực nghiệm
+[TABLE]
+Thành phần | Công cụ/cấu hình
+ESP32 RFID/barrier | ESP32 DevKit, firmware/main.py, MFRC522, servo, LCD I2C, buzzer, LED, HC-SR04
+ESP32-CAM | HTTP camera server, endpoint /capture để chụp ảnh OCR, /stream để căn chỉnh camera
+MQTT broker | Truyền sự kiện RFID, lệnh OPEN và gate_ack
+Camera bridge/AI | backend_v3/camera_bridge.py, YOLOv8, license_plate_detector.pt, PaddleOCR
+Backend | Python, FastAPI, Uvicorn, backend_v3/app
+Database | MongoDB và GridFS
+Frontend | frontend_v3, HTML, CSS, JavaScript, Bootstrap, Chart.js
+Trình duyệt kiểm thử | Chrome/Edge/Firefox
+Mạng | Wi-Fi/LAN nội bộ
+Mô hình YOLO | YOLOv8 - Ultralytics 8.0.223, trained từ yolov8n.pt
+Hình 3.1. Ảnh mô hình phần cứng.
+Quy trình cài đặt và chạy hệ thống
+Bảng 3.2. Các bước cài đặt và chạy demo
+[TABLE]
+Bước | Thao tác | Kết quả cần đạt
+1 | Cấu hình MongoDB và tạo dữ liệu ban đầu bằng init_data.py trong backend_v3. | Các collection cơ bản, dữ liệu slot/gói cước/khách hàng mẫu sẵn sàng để kiểm thử.
+2 | Khởi động MQTT broker và kiểm tra các topic pbl5/smartparking/*. | ESP32 và backend có thể publish/subscribe UID, lệnh gate, gate_ack và parking_status.
+3 | Chạy backend FastAPI bằng python -m app.main hoặc uvicorn theo cấu hình của backend_v3. | API /health và /api/v1/* hoạt động, kết nối MongoDB và MQTT được ghi log thành công.
+4 | Nạp firmware/main.py và firmware/esp32_config.py cho ESP32 cổng. | ESP32 đọc RFID, publish UID lên MQTT_TOPIC_RFID, subscribe MQTT_TOPIC_GATE và MQTT_TOPIC_PARKING_STATUS.
+5 | Nạp firmware ESP32-CAM trong thư mục 260516-121635-esp32cam. | Trình duyệt hoặc camera_bridge truy cập được /capture và /stream.
+6 | Chạy backend_v3/camera_bridge.py. | Bridge subscribe topic RFID, chụp ảnh ESP32-CAM, OCR biển số và POST multipart lên /access-events/rfid-camera.
+7 | Mở frontend_v3 qua web server tĩnh, ví dụ python -m http.server 5500. | Dashboard, đăng ký thẻ, camera events, parking map, map designer và doanh thu gọi được API backend.
+8 | Kiểm thử luồng vào/ra bằng thẻ đã đăng ký và thẻ chưa đăng ký. | Backend tạo/đóng session, lưu event/capture, publish mở cổng khi hợp lệ và ghi nhận gate_ack.
+Hình 3.2. Ảnh terminal backend chạy thành công.
+Hình 3.3. Ảnh terminal camera_bridge thể hiện subscribe RFID, capture ảnh và gửi POST
+Dữ liệu kiểm thử
+Dữ liệu kiểm thử được tổ chức theo các collection MongoDB. Ngoài dữ liệu nghiệp vụ như khách hàng, xe, thẻ, slot và session, hệ thống còn lưu camera_captures, ảnh trong GridFS và parking_events để truy vết từng quyết định vào/ra.
+Bảng 3.3. Dữ liệu kiểm thử đề xuất
+[TABLE]
+Nhóm dữ liệu | Nội dung kiểm thử | Mục đích
+Khách hàng | Thông tin người dùng gửi xe | Kiểm thử quản lý khách hàng và liên kết phương tiện
+Phương tiện | Biển số, loại xe, chủ xe | Đối chiếu với kết quả nhận diện biển số
+Thẻ RFID | UID thẻ, trạng thái thẻ | Kiểm thử quẹt thẻ hợp lệ, chưa đăng ký, bị khóa
+Parking slots | Danh sách chỗ đỗ, trạng thái slot | Kiểm thử gán chỗ, giải phóng chỗ và cảnh báo bãi đầy
+Parking layouts | Dữ liệu thiết kế sơ đồ bãi đỗ | Kiểm thử chức năng thiết kế và xác nhận layout
+Packages | Gói cước gửi xe | Kiểm thử gói ngày/tháng nếu có
+Sessions | Phiên gửi xe đang mở/đã hoàn thành | Kiểm thử check-in/check-out
+Transactions | Dữ liệu giao dịch/thanh toán | Kiểm thử tính phí và doanh thu
+Pending scans | Thẻ mới chờ đăng ký | Kiểm thử đăng ký thẻ RFID
+Parking events | Sự kiện vào/ra | Kiểm thử lịch sử vận hành
+Camera captures | Metadata ảnh, biển số, confidence, metrics | Kiểm thử camera events và OCR
+GridFS camera_images | Ảnh capture thực tế | Lưu và hiển thị ảnh phương tiện
+Kịch bản kiểm thử chức năng
+Bảng 3.4. Kịch bản kiểm thử chức năng
+[TABLE]
+STT | Kịch bản | Các bước thực hiện | Kết quả mong đợi | Trạng thái
+1 | ESP32 đọc thẻ RFID | Đưa thẻ RFID vào vùng đọc MFRC522 | ESP32 đọc được UID và publish sự kiện lên MQTT | Đạt
+2 | camera_bridge.py nhận RFID event | Quẹt thẻ RFID khi camera_bridge.py đang chạy | Bridge nhận UID từ topic MQTT pbl5/smartparking/rfid_scanned | Đạt
+3 | ESP32-CAM chụp ảnh | Bridge gọi endpoint /capture | ESP32-CAM trả ảnh hợp lệ | Đạt
+4 | AI/OCR nhận diện biển số | Bridge xử lý ảnh bằng YOLO + PaddleOCR | Hệ thống trả về biển số hoặc trạng thái không nhận diện được | Đạt ở mức demo
+5 | Gửi access event về backend | Bridge gửi UID, biển số, ảnh và metrics lên /api/v1/access-events/rfid-camera | Backend nhận dữ liệu và xử lý nghiệp vụ | Đạt
+6 | Xe vào với dữ liệu hợp lệ | Thẻ hợp lệ, biển số khớp, còn slot trống | Backend tạo session, lưu event, publish MQTT OPEN | Đạt
+7 | Xe ra với dữ liệu hợp lệ | Xe đang có session, quẹt lại thẻ | Backend đóng session, tính phí, giải phóng slot, publish MQTT OPEN | Đạt
+8 | Thẻ chưa đăng ký | Quẹt UID chưa có trong database | Hệ thống ghi nhận pending scan hoặc từ chối theo cấu hình | Đạt
+9 | Thẻ bị khóa | Quẹt thẻ có trạng thái inactive/blocked | Backend từ chối, không publish MQTT OPEN | Đạt
+10 | Biển số không khớp | UID hợp lệ nhưng OCR ra biển số khác xe đăng ký | Backend cảnh báo/từ chối theo logic kiểm tra | Đạt ở mức demo
+11 | Bãi đầy | Tất cả slot ở trạng thái occupied | Backend từ chối xe vào, không mở barrier | Đạt
+12 | ESP32 nhận MQTT OPEN | Backend publish lệnh OPEN | ESP32 điều khiển servo mở barrier | Đạt
+13 | ESP32 gửi gate_ack | Sau khi mở/đóng barrier | Backend nhận ACK trạng thái cổng | Đạt
+14 | Dashboard hiển thị sự kiện | Mở trang camera events/access events | Frontend hiển thị UID, biển số, ảnh, trạng thái | Đạt
+15 | Map chỗ đỗ cập nhật | Xe vào/ra thành công | Slot đổi trạng thái available/occupied | Đạt
+Kết quả kiểm thử phần cứng
+Kết quả kiểm thử phần cứng cho thấy các thiết bị chính hoạt động đúng theo yêu cầu của mô hình. ESP32 đọc được UID từ thẻ RFID thông qua module MFRC522, kết nối MQTT broker, publish sự kiện RFID, nhận lệnh OPEN từ backend và điều khiển servo barrier. LCD hiển thị trạng thái hệ thống, buzzer và LED phản hồi theo từng tình huống thành công hoặc lỗi. Cảm biến HC-SR04 hỗ trợ kiểm tra vật cản trong khu vực barrier.
+Đối với ESP32-CAM, thiết bị khởi động HTTP camera server, cung cấp endpoint /capture để chụp ảnh phục vụ OCR và endpoint /stream để căn chỉnh vị trí camera. Trong quá trình thử nghiệm, camera bridge có thể gọi ESP32-CAM để lấy ảnh và đưa vào pipeline xử lý biển số.
+Bảng 3.5. Kết quả kiểm thử phần cứng
+[TABLE]
+Tiêu chí | Kết quả | Nhận xét
+ESP32 khởi động và kết nối mạng | Đạt | Thiết bị kết nối Wi-Fi và MQTT broker để gửi/nhận sự kiện
+RFID MFRC522 đọc UID | Đạt | Đọc được UID thẻ trong môi trường demo
+Publish RFID qua MQTT | Đạt | Sự kiện RFID được gửi lên topic MQTT
+Nhận lệnh MQTT OPEN | Đạt | ESP32 nhận lệnh mở cổng từ backend
+Điều khiển servo barrier | Đạt | Servo mở/đóng barrier theo lệnh
+Gửi gate_ack | Đạt | ESP32 gửi ACK sau khi thực hiện lệnh cổng
+LCD hiển thị trạng thái | Đạt | Hiển thị READY, ACCEPTED, DENIED hoặc trạng thái tương ứng
+Buzzer/LED phản hồi | Đạt | Phản hồi khi thành công, từ chối hoặc lỗi
+HC-SR04 đo khoảng cách | Đạt | Hỗ trợ kiểm tra vật cản gần barrier
+ESP32-CAM /capture | Đạt | Camera trả ảnh phục vụ nhận diện biển số
+ESP32-CAM /stream | Đạt | Hỗ trợ căn chỉnh góc camera
+Hình 3.4. Ảnh chụp từ ESP32-CAM qua endpoint /capture
+Kết quả kiểm thử backend
+Backend FastAPI được kiểm thử thông qua Swagger UI, frontend dashboard, dữ liệu gửi từ camera_bridge.py và các sự kiện MQTT. Endpoint vận hành chính của luồng xe là:
+POST /api/v1/access-events/rfid-camera
+Endpoint này nhận dữ liệu đã được camera_bridge.py tổng hợp gồm UID thẻ RFID, ảnh chụp, biển số nhận diện, confidence, metrics và thông tin sự kiện. Backend sau đó thực hiện kiểm tra thẻ RFID, phương tiện, biển số, slot, session và quyết định cho phép hoặc từ chối mở barrier. Nếu hợp lệ, backend publish MQTT OPEN để ESP32 điều khiển cổng.
+Ngoài endpoint vận hành chính, backend còn cung cấp các API phục vụ dashboard, camera events, đăng ký thẻ, quản lý khách hàng, phương tiện, slot, layout, gói cước và doanh thu.
+Bảng 3.6. Kết quả kiểm thử backend
+[TABLE]
+API/Chức năng | Trường hợp kiểm thử | Kết quả mong đợi | Kết quả thực tế
+/api/v1/access-events/rfid-camera | Nhận UID + biển số + ảnh từ camera bridge | Backend xử lý access event và quyết định vào/ra | Đạt
+Validate RFID | UID tồn tại và active | Cho phép tiếp tục kiểm tra phương tiện/session | Đạt
+Validate RFID | UID chưa đăng ký hoặc bị khóa | Từ chối hoặc lưu pending scan theo cấu hình | Đạt
+Validate biển số | Biển số OCR khớp xe đăng ký | Cho phép xử lý entry/exit | Đạt ở mức demo
+Validate biển số | Biển số không khớp | Cảnh báo/từ chối theo logic nghiệp vụ | Đạt ở mức demo
+Xử lý xe vào | Thẻ hợp lệ, biển số hợp lệ, còn slot | Tạo session, gán slot, lưu event, publish MQTT OPEN | Đạt
+Xử lý xe ra | Xe có session đang mở | Đóng session, tính phí, giải phóng slot, publish MQTT OPEN | Đạt
+Lưu ảnh capture | Có ảnh từ ESP32-CAM | Lưu ảnh vào GridFS và metadata vào collection liên quan | Đạt
+Lưu parking event | Có sự kiện vào/ra | Lưu lịch sử sự kiện để frontend hiển thị | Đạt
+MQTT gate command | Backend quyết định hợp lệ | Publish MQTT OPEN | Đạt
+Gate ACK | ESP32 phản hồi sau khi mở barrier | Backend ghi nhận ACK/trạng thái cổng | Đạt
+/api/v1/access-events/events | Frontend lấy danh sách sự kiện | Trả danh sách access events | Đạt
+/api/v1/access-events/captures | Frontend lấy ảnh capture | Trả metadata ảnh/capture | Đạt
+/api/v1/rfid/latest-scan | Kiểm tra lần quẹt gần nhất | Trả UID mới nhất | Đạt
+/api/v1/rfid/register-card | Đăng ký thẻ mới | Lưu thông tin thẻ vào database | Đạt
+/api/v1/slots/generate-layout | Sinh layout chỗ đỗ | Trả phương án layout | Đạt ở mức demo
+/api/v1/slots/confirm-layout | Xác nhận layout | Lưu layout và slot vào database | Đạt ở mức demo
+Kết quả kiểm thử cho thấy backend đã đảm nhiệm vai trò trung tâm trong hệ thống. Backend không chỉ xử lý dữ liệu nghiệp vụ mà còn là thành phần quyết định việc mở barrier.
+Hình 3.5. Swagger UI endpoint
+Kết quả kiểm thử dashboard
+Dashboard web được kiểm thử thông qua các màn hình chính trong thư mục frontend, bao gồm Dashboard, Đăng ký thẻ, Khách hàng, Xe, Map chỗ đỗ, Thiết kế bãi đỗ, Gói cước, Lịch sử, Camera events và Doanh thu. Dữ liệu trên frontend được lấy thông qua các API của backend FastAPI và phản ánh trạng thái trong MongoDB.
+Khi có sự kiện xe vào/ra thành công, dashboard cập nhật trạng thái slot, lịch sử phiên gửi xe, camera events và các số liệu quản lý. Trang camera events hiển thị thông tin UID thẻ RFID, biển số nhận diện, ảnh capture, thời gian và trạng thái xử lý. Đây là phần quan trọng để người quản lý đối chiếu trực quan giữa dữ liệu RFID và hình ảnh phương tiện.
+Bảng 3.7. Kết quả kiểm thử dashboard
+[TABLE]
+Chức năng dashboard | Mô tả kiểm thử | Kết quả mong đợi | Kết quả thực tế
+Dashboard tổng quan | Mở trang dashboard | Hiển thị số liệu tổng quan của bãi xe | Đạt
+Đăng ký thẻ | Quẹt thẻ mới và đăng ký | Thẻ được lưu vào database | Đạt
+Quản lý khách hàng | Thêm/sửa/xóa khách hàng | Dữ liệu khách hàng cập nhật đúng | Đạt
+Quản lý phương tiện | Thêm/sửa/xóa xe và biển số | Phương tiện liên kết đúng với khách hàng | Đạt
+Map chỗ đỗ | Xe vào/ra hoặc thay đổi slot | Slot cập nhật trạng thái available/occupied | Đạt
+Thiết kế bãi đỗ | Sinh và xác nhận layout | Layout được lưu và dùng cho map slot | Đạt ở mức demo
+Gói cước | Tạo/xem gói gửi xe | Gói cước hiển thị trên giao diện | Đạt
+Lịch sử | Tạo phiên vào/ra | Lịch sử hiển thị đúng session/event | Đạt
+Camera events | Có sự kiện RFID + OCR | Hiển thị UID, biển số, ảnh và trạng thái | Đạt
+Doanh thu | Xe ra có phí | Doanh thu cập nhật theo dữ liệu backend | Đạt
+Kết quả kiểm thử cho thấy dashboard đáp ứng được yêu cầu quản lý và giám sát ở mức mô hình demo. Đặc biệt, trang camera events giúp người quản lý kiểm tra lại từng lượt xe vào/ra bằng ảnh capture và biển số nhận diện, tăng tính minh bạch so với hệ thống chỉ dùng RFID.
+Hình 3.6. Giao diện dashboard tổng quan
+Hình 3.7. Giao diện Camera events hiển thị UID, biển số và ảnh capture
+Kết quả kiểm thử cảnh báo quá tải, quản lý và thiết kế sơ đồ bãi đỗ
+Chức năng cảnh báo quá tải được kiểm thử bằng cách thay đổi trạng thái slot trong bãi xe. Khi còn slot trống, hệ thống cho phép xe vào nếu RFID và biển số hợp lệ. Khi tỷ lệ lấp đầy cao, dashboard hiển thị cảnh báo để người quản lý biết bãi gần đầy. Khi toàn bộ slot đã ở trạng thái occupied, backend từ chối xe vào và không publish MQTT OPEN.
+Ngoài các chức năng quản lý slot cơ bản, hệ thống còn có trang Thiết kế bãi đỗ để tạo sơ đồ bãi đỗ bán tự động. Người dùng upload ảnh hoặc bản vẽ mặt bằng, vẽ ranh giới bãi đỗ bằng polygon, vẽ vật cản nếu có, đặt tỷ lệ mét/pixel, chọn loại slot và danh sách góc thử. Sau đó frontend gửi dữ liệu này lên backend để sinh preview các phương án bố trí slot. Người dùng chọn phương án phù hợp và xác nhận lưu. Hệ thống lưu dữ liệu slot vào parking_slots, lưu metadata layout vào parking_layouts và hiển thị sơ đồ đã lưu trên trang Parking Map.
+Bảng 3.8. Kết quả kiểm thử quá tải
+[TABLE]
+Trạng thái bãi | Tỷ lệ lấp đầy | Kết quả mong đợi | Kết quả thực tế
+Bình thường | < 80% | Cho phép xe vào nếu thẻ hợp lệ | Cho phép.
+Gần đầy | 80–99% | Cho phép xe vào nhưng cảnh báo dashboard | Cho phép, có cảnh báo.
+Đầy | 100% | Từ chối xe vào, không mở barrier | Từ chối, báo đầy.
+Kết quả kiểm thử cho thấy backend kiểm soát được trạng thái chỗ đỗ và có thể ngăn xe vào khi không còn slot trống. Đây là chức năng cần thiết để tránh tình trạng xe vào bãi nhưng không có vị trí đỗ. Trong tương lai, cảnh báo quá tải có thể được mở rộng bằng thông báo realtime qua WebSocket, Telegram hoặc email.
+Bảng 3.9. Kết quả kiểm thử chức năng thiết kế sơ đồ bãi đỗ bán tự động
+[TABLE]
+Trường hợp kiểm thử | Thao tác thực hiện | Kết quả mong đợi | Kết quả thực tế
+Upload ảnh mặt bằng | Chọn ảnh/bản vẽ mặt bằng | Ảnh được hiển thị làm nền thiết kế | Đạt
+Vẽ ranh giới bãi đỗ | Người dùng vẽ boundary polygon | Hệ thống ghi nhận vùng hợp lệ của bãi | Đạt
+Vẽ vật cản | Người dùng vẽ obstacle polygon | Hệ thống ghi nhận vùng không được đặt slot | Đạt
+Đặt tỷ lệ | Người dùng đặt scale mét/pixel | Backend dùng scale để quy đổi kích thước slot | Đạt
+Chọn loại slot | Chọn ô tô 2.5 x 5.0 m hoặc xe máy 1.0 x 2.0 m | Hệ thống dùng đúng kích thước slot | Đạt
+Nhập góc thử | Nhập các góc 0, 15, 30, 45, 60, 75, 90 | Backend thử nhiều phương án layout | Đạt
+Tạo preview | Bấm nút tạo preview | Backend sinh danh sách slot gợi ý | Đạt
+Kiểm tra vật cản | Slot giao với obstacle | Slot không hợp lệ bị loại bỏ | Đạt
+Xác nhận lưu layout | Chọn phương án và bấm xác nhận | Lưu parking_slots và parking_layouts | Đạt
+Hiển thị trên Parking Map | Mở trang Parking Map sau khi lưu | Layout đã lưu hiển thị đúng | Đạt
+Hình 3.8. Ví dụ giao diện trang thiết kế bãi đỗ
+Hình 3.9. Map chỗ đỗ hiện tại của dự án
+Kết quả kiểm thử AI/ nhận diện biển số
+Kết quả huấn luyện YOLO phát hiện biển số
+Sau khi huấn luyện mô hình YOLOv8 trên tập dữ liệu biển số đã chuẩn bị, hệ thống sinh ra các biểu đồ đánh giá gồm loss huấn luyện, loss validation, Precision, Recall, mAP50, mAP50-95, đường cong Precision-Recall và ma trận nhầm lẫn. Các biểu đồ này được sử dụng để đánh giá khả năng học của mô hình phát hiện vùng biển số.
+Hình 3.10. Biểu đồ kết quả huấn luyện mô hình YOLOv8 phát hiện biển số
+Biểu đồ cho thấy các giá trị loss như train/box_loss, train/cls_loss, train/dfl_loss và các loss trên tập validation có xu hướng giảm dần qua các epoch. Điều này cho thấy mô hình đã học được đặc trưng của vùng biển số trong tập dữ liệu. Đồng thời, các chỉ số Precision, Recall, mAP50 và mAP50-95 có xu hướng tăng dần trong quá trình huấn luyện. Tuy nhiên, giá trị cuối của các chỉ số vẫn chưa cao, cho thấy mô hình mới phù hợp ở mức demo/prototype và cần cải thiện thêm dữ liệu huấn luyện nếu muốn triển khai thực tế.
+Hình 3.11. Đường cong Precision-Recall của mô hình YOLOv8
+Đường cong Precision-Recall thể hiện mối quan hệ giữa độ chính xác và khả năng phát hiện của mô hình. Kết quả đạt được mAP@0.5 khoảng 0.372 đối với lớp license_plate. Giá trị này cho thấy mô hình đã có khả năng phát hiện vùng biển số ở mức thử nghiệm, nhưng chưa đủ cao để xem là mô hình production. Nguyên nhân chính là tập dữ liệu hiện tại sử dụng pseudo-label sinh tự động bằng OpenCV heuristic, chưa phải nhãn thủ công được kiểm chứng đầy đủ.
+Hình 3.12. Ma trận nhầm lẫn chuẩn hóa của mô hình YOLOv8
+Ma trận nhầm lẫn chuẩn hóa cho thấy mô hình vẫn bỏ sót một phần đáng kể các vùng biển số trong tập validation. Cụ thể, với lớp license_plate, mô hình phát hiện đúng khoảng 0.41 và bị nhầm sang background khoảng 0.59. Điều này phản ánh hạn chế của mô hình hiện tại, đặc biệt là khả năng bỏ sót biển số khi ảnh bị mờ, góc chụp chưa tốt hoặc nhãn huấn luyện chưa chính xác. Kết quả này phù hợp với nhận định rằng mô hình hiện tại đủ để kiểm thử pipeline YOLO → crop biển số → PaddleOCR → backend, nhưng cần cải thiện thêm trước khi triển khai trong môi trường thực tế.
+Bảng 3.10. Kết quả validation mô hình YOLO phát hiện biển số
+[TABLE]
+Chỉ số | Giá trị
+Validation images | 311
+Instances | 311
+Precision | 0.487
+Recall | 0.408
+mAP50 | 0.372
+mAP50-95 | 0.255
+Từ các kết quả trên, có thể nhận xét rằng mô hình YOLOv8 đã học được đặc trưng cơ bản của vùng biển số và có thể tích hợp vào pipeline nhận diện biển số của hệ thống. Tuy nhiên, do dữ liệu huấn luyện được sinh nhãn tự động nên chất lượng nhãn chưa cao, dẫn đến Precision, Recall và mAP còn hạn chế. Trong các phiên bản tiếp theo, nhóm cần gán nhãn thủ công bằng các công cụ như LabelImg, CVAT hoặc Roboflow, bổ sung ảnh thực tế từ ESP32-CAM và tách tập test độc lập để đánh giá khách quan hơn.
+Kết quả tích hợp pipeline runtime
+Trong quá trình chạy hệ thống, camera_bridge.py đã tích hợp đầy đủ các bước nhận diện biển số và gửi kết quả về backend. Theo trạng thái dự án, hệ thống đã có dữ liệu ảnh capture lưu trữ, bao gồm khoảng 162 ảnh capture phục vụ kiểm thử và hiển thị trên giao diện camera events.
+Bảng 3.11. Kết quả kiểm thử pipeline AI/OCR runtime
+[TABLE]
+Tiêu chí | Kết quả
+ESP32-CAM cung cấp endpoint /capture | Đạt
+ESP32-CAM cung cấp endpoint /stream để căn chỉnh camera | Đạt
+camera_bridge.py kết nối MQTT broker | Đạt
+camera_bridge.py subscribe topic RFID | Đạt
+Nhận UID RFID từ MQTT | Đạt
+Gọi ESP32-CAM chụp ảnh | Đạt
+Chụp burst ảnh | Đạt, mặc định 2 ảnh/burst và có thể cấu hình tăng số frame
+Chọn ảnh tốt nhất | Đạt
+Load model YOLO license_plate_detector.pt | Đạt
+PaddleOCR hoạt động | Đạt
+YOLO phát hiện vùng biển số | Đạt ở mức thử nghiệm
+Crop vùng biển số | Đạt khi YOLO có bounding box
+Fallback OCR toàn ảnh | Có trong chế độ test/dev
+Normalize + regex biển số Việt Nam | Đạt
+Gửi UID + biển số + ảnh + metrics lên backend | Đạt
+Backend lưu access event | Đạt
+Backend lưu ảnh vào GridFS | Đạt
+Frontend hiển thị camera events | Đạt
+Trong runtime, nếu YOLO phát hiện được vùng biển số, hệ thống crop vùng biển số và đưa vào PaddleOCR. Nếu YOLO không phát hiện được biển số, hệ thống có cơ chế fallback OCR toàn ảnh trong chế độ test/dev. Cấu hình này giúp tăng khả năng có kết quả trong quá trình thử nghiệm, nhưng khi triển khai thực tế nên yêu cầu detector phát hiện được vùng biển số trước khi OCR để tránh đọc nhầm chữ rác trong ảnh.
+Bảng 3.12. Nhận xét mô-đun AI/OCR
+[TABLE]
+Nội dung | Đánh giá
+Mức độ tích hợp vào hệ thống | Đã tích hợp vào luồng RFID → camera_bridge → backend
+Mức độ phù hợp cho demo | Phù hợp
+Mức độ sẵn sàng production | Chưa phù hợp
+Nguyên nhân hạn chế chính | Dataset dùng pseudo-label, chưa có test set độc lập, ảnh ESP32-CAM phụ thuộc ánh sáng/góc chụp
+Hướng cải thiện | Gán nhãn thủ công, bổ sung ảnh thực tế từ ESP32-CAM, tối ưu camera và ánh sáng
+Đánh giá chung hệ thống
+Qua quá trình kiểm thử, hệ thống đã thể hiện được đầy đủ luồng vận hành chính của mô hình bãi đỗ xe thông minh V3. ESP32 RFID/barrier đọc thẻ RFID, publish UID qua MQTT, nhận lệnh OPEN từ backend và điều khiển barrier. camera_bridge.py nhận UID, gọi ESP32-CAM chụp ảnh, xử lý YOLO + PaddleOCR và gửi dữ liệu về backend. Backend kiểm tra RFID, biển số, slot, session, xử lý entry/exit, lưu dữ liệu vào MongoDB/GridFS và publish MQTT OPEN nếu hợp lệ. Dashboard hiển thị trạng thái vận hành, dữ liệu quản lý, camera events và doanh thu.
+Hệ thống đạt mục tiêu xây dựng mô hình demo có khả năng kết hợp IoT, backend, AI/OCR và dashboard web. So với hệ thống chỉ dùng RFID, việc tích hợp camera và nhận diện biển số giúp tăng khả năng kiểm chứng phương tiện trực quan, đồng thời lưu lại ảnh capture phục vụ truy vết lịch sử.
+Bảng 3.13. Đánh giá tổng hợp hệ thống
+[TABLE]
+Nhóm chức năng | Kết quả đạt được | Nhận xét
+Đọc RFID | Đạt | ESP32 đọc UID và publish sự kiện qua MQTT
+MQTT giao tiếp thiết bị | Đạt | ESP32 gửi RFID event, backend publish OPEN, ESP32 gửi ACK
+Điều khiển barrier | Đạt | Servo mở/đóng theo lệnh hợp lệ
+ESP32-CAM capture | Đạt | Camera cung cấp /capture và /stream
+camera_bridge.py | Đạt | Nhận UID, gọi camera, xử lý AI/OCR và gửi backend
+YOLO phát hiện biển số | Đạt ở mức demo | Model dùng pseudo-label, cần cải thiện dữ liệu để tăng độ chính xác
+PaddleOCR | Đạt ở mức demo | Đọc ký tự biển số sau khi crop hoặc fallback toàn ảnh
+Backend FastAPI | Đạt | Xử lý access event, session, slot, payment, MQTT command
+MongoDB/GridFS | Đạt | Lưu dữ liệu nghiệp vụ, sự kiện và ảnh
+Dashboard Web | Đạt | Hiển thị quản lý, thống kê, map, camera events
+Cảnh báo quá tải | Đạt | Từ chối xe vào khi bãi đầy
+Tính phí/doanh thu | Đạt ở mức demo | Tính phí và hiển thị doanh thu theo dữ liệu session/payment
+Thiết kế bãi đỗ | Đạt ở mức demo | Có chức năng sinh/xác nhận layout slot
+Bảo mật | Chưa hoàn thiện | Cần bổ sung JWT, phân quyền, API key thiết bị
+Realtime dashboard | Chưa hoàn thiện | Hiện phù hợp demo, có thể nâng cấp WebSocket
+Hạn chế trong thực nghiệm
+Mặc dù hệ thống đã hoàn thành luồng vận hành chính ở mức demo/prototype, quá trình thực nghiệm vẫn còn một số hạn chế cần được ghi nhận.
+Thứ nhất, hệ thống mới được kiểm thử trong môi trường mô hình với số lượng thiết bị, thẻ RFID, phương tiện và lượt xe thử nghiệm còn hạn chế. Do đó, hệ thống chưa được kiểm thử stress test với lưu lượng xe lớn, nhiều phiên gửi xe đồng thời hoặc nhiều người dùng truy cập dashboard cùng lúc.
+Thứ hai, kết nối IoT phụ thuộc vào mạng Wi-Fi nội bộ. Nếu mạng không ổn định, ESP32 có thể mất kết nối MQTT, ESP32-CAM có thể chụp ảnh chậm hoặc camera_bridge.py có thể không lấy được ảnh đúng thời điểm. Trong môi trường thực tế, cần đánh giá thêm độ trễ mạng, nhiễu sóng, khoảng cách thiết bị và độ ổn định của MQTT broker.
+Thứ ba, mô-đun nhận diện biển số đã được tích hợp nhưng độ chính xác còn phụ thuộc nhiều vào chất lượng ảnh, ánh sáng, góc chụp, khoảng cách camera và chất lượng biển số. Model YOLO hiện tại được huấn luyện bằng pseudo-label sinh tự động, chưa có nhãn thủ công chuẩn và chưa có tập test độc lập. Vì vậy, mô hình phù hợp để chứng minh pipeline nhưng chưa đủ để triển khai production.
+Thứ tư, cơ chế fallback OCR toàn ảnh giúp tăng khả năng có kết quả trong giai đoạn test/dev, nhưng có thể dẫn đến nhận nhầm chữ rác trong ảnh nếu triển khai thực tế. Khi dùng cho môi trường production, nên cấu hình yêu cầu YOLO phát hiện được vùng biển số trước khi đưa vào OCR.
+Thứ năm, hệ thống chưa hoàn thiện các yêu cầu bảo mật. Dashboard chưa có đăng nhập/phân quyền đầy đủ, API chưa được bảo vệ bằng JWT hoặc API key thiết bị, MQTT chưa có cơ chế xác thực mạnh và chưa mã hóa ở mức triển khai thực tế.
+Thứ sáu, chức năng thanh toán mới dừng ở mức ghi nhận dữ liệu hoặc tính phí trong hệ thống, chưa tích hợp thanh toán điện tử như QR, ví điện tử hoặc cổng thanh toán ngân hàng. Do đó, hệ thống chưa thể xác minh giao dịch tự động như một bãi xe thương mại.
+Thứ bảy, hệ thống đã hỗ trợ logic cổng vào/cổng ra ở mức code, tuy nhiên chưa kiểm thử đầy đủ với nhiều cổng, nhiều camera, nhiều barrier và nhiều khu vực đỗ xe hoạt động đồng thời.
+Cuối cùng, backend và frontend hiện chủ yếu chạy trong môi trường local/demo. Hệ thống chưa được triển khai cloud production, chưa có HTTPS, backup tự động, monitoring, alert lỗi, Docker hóa toàn bộ dịch vụ và quy trình phục hồi dữ liệu.
+Kết luận
+Kết quả đạt được
+Đồ án đã xây dựng được mô hình hệ thống bãi đỗ xe thông minh kết hợp IoT, backend, AI/OCR, MongoDB/GridFS và dashboard web. Hệ thống đã hoàn thành luồng vận hành demo từ RFID đến mở barrier: ESP32 đọc UID thẻ, publish sự kiện qua MQTT, camera_bridge.py nhận UID, gọi ESP32-CAM /capture, xử lý YOLO + PaddleOCR, gửi dữ liệu về FastAPI backend, backend kiểm tra RFID/biển số/slot/session, lưu access event và publish MQTT OPEN để ESP32 mở barrier.
+Về phần cứng, nhóm đã triển khai ESP32 RFID/barrier với MFRC522, servo, LCD I2C, buzzer, LED và HC-SR04. Firmware hỗ trợ nhận lệnh OPEN qua MQTT, điều khiển servo cổng vào/cổng ra và gửi gate_ack. ESP32-CAM được triển khai như một HTTP camera server, hỗ trợ endpoint /capture để chụp ảnh OCR và /stream để căn chỉnh camera.
+Về AI/OCR, nhóm đã xây dựng dataset huấn luyện phát hiện biển số gồm 1458 ảnh hợp lệ sau lọc, sử dụng OpenCV heuristic để sinh pseudo-label, huấn luyện YOLOv8 từ yolov8n.pt và lưu model license_plate_detector.pt. Model được tích hợp vào camera_bridge.py cùng PaddleOCR để xử lý biển số theo hướng server-side OCR.
+Về backend, hệ thống FastAPI xử lý access events, RFID, phương tiện, khách hàng, slot, layout bãi đỗ, session, package, transaction, revenue, camera captures, GridFS và MQTT gate command. Endpoint vận hành chính là POST /api/v1/access-events/rfid-camera. Backend lưu dữ liệu vào MongoDB/GridFS, quyết định entry/exit và publish lệnh mở cổng nếu hợp lệ.
+Về frontend, dashboard web cung cấp các trang quản lý như Dashboard, Đăng ký thẻ, Khách hàng, Xe, Map chỗ đỗ, Thiết kế bãi đỗ, Gói cước, Lịch sử, Camera events và Doanh thu. Giao diện hỗ trợ người quản lý theo dõi trạng thái vận hành, sự kiện camera/OCR, dữ liệu xe vào/ra và thống kê doanh thu.
+Hạn chế
+Hệ thống hiện mới đạt mức demo/prototype, chưa phải hệ thống production. Về AI/OCR, model YOLO được huấn luyện bằng pseudo-label nên độ chính xác chưa cao; kết quả validation gồm Precision 0.487, Recall 0.408, mAP50 0.372 và mAP50-95 0.255. Chưa có tập test độc lập được gán nhãn thủ công, chưa đánh giá đầy đủ OCR ký tự và Plate Exact Match.
+Về hạ tầng, hệ thống còn phụ thuộc vào Wi-Fi, MQTT broker, camera_bridge.py và ESP32-CAM /capture. Nếu một thành phần bị timeout hoặc mất kết nối, luồng mở cổng có thể bị chậm hoặc thất bại. Hệ thống cần thêm cơ chế retry, timeout rõ ràng, log tập trung và dashboard cảnh báo trạng thái thiết bị.
+Về bảo mật, dashboard và API chưa hoàn thiện xác thực, phân quyền, API key/device token, HTTPS và chính sách CORS chặt chẽ. Về thanh toán, hệ thống chưa tích hợp cổng thanh toán điện tử. Về realtime, dashboard chưa hoàn thiện WebSocket/notification. Về mở rộng, hệ thống chưa kiểm thử với nhiều cổng, nhiều camera, nhiều worker OCR và lưu lượng xe lớn.
+Hướng phát triển
+Trong tương lai, nhóm cần ưu tiên cải thiện độ chính xác nhận diện biển số bằng cách gán nhãn thủ công lại dataset bằng LabelImg, CVAT hoặc Roboflow; bổ sung ảnh thực tế từ ESP32-CAM trong nhiều điều kiện ánh sáng/góc chụp; tách tập test độc lập và đánh giá rõ các chỉ số detector/OCR/Plate Exact Match.
+Về kiến trúc, có thể nâng cấp camera_bridge.py thành service ổn định hơn với queue, retry, timeout, logging, health check và khả năng chạy nhiều worker. Nếu hệ thống mở rộng, nên hỗ trợ nhiều ESP32, nhiều camera, nhiều gate_id và cơ chế đồng bộ trạng thái thiết bị theo thời gian thực.
+Về bảo mật, backend nên bổ sung JWT cho người dùng, API key hoặc device token cho ESP32 và camera_bridge.py, giới hạn CORS, HTTPS, phân quyền admin/staff và audit log. Dashboard cần đăng nhập, phân quyền và ghi log thao tác quan trọng.
+Về tính năng, có thể bổ sung WebSocket để dashboard cập nhật realtime, thông báo qua Telegram/email khi có lỗi thiết bị hoặc biển số không khớp, tích hợp thanh toán QR/ví điện tử/cổng thanh toán, xuất báo cáo CSV/Excel/PDF và triển khai Docker/cloud với backup/monitoring.
+Về phần cứng, có thể nâng cấp ESP32-CAM lên camera IP hoặc camera độ phân giải cao hơn, tối ưu vị trí lắp đặt, bổ sung đèn chiếu sáng, cảm biến an toàn chuyên dụng và công tắc hành trình để barrier hoạt động ổn định hơn trong môi trường thực tế.
+Danh mục tài liệu tham khảo
+[1] Espressif Systems, “Arduino-ESP32 Documentation,” Espressif Documentation. [Online]. Available: https://docs.espressif.com/projects/arduino-esp32/en/latest/. [Accessed: 09-Jun-2026].
+[2] OASIS Open, “MQTT Version 5.0,” OASIS Standard, 07-Mar-2019. [Online]. Available: https://docs.oasis-open.org/mqtt/mqtt/v5.0/mqtt-v5.0.html. [Accessed: 09-Jun-2026].
+[3] S. Ramírez, “FastAPI Documentation,” FastAPI. [Online]. Available: https://fastapi.tiangolo.com/. [Accessed: 09-Jun-2026].
+[4] MongoDB, Inc., “MongoDB Documentation,” MongoDB Docs. [Online]. Available: https://www.mongodb.com/docs/. [Accessed: 09-Jun-2026].
+[5] MongoDB, Inc., “GridFS,” MongoDB Manual. [Online]. Available: https://www.mongodb.com/docs/manual/core/gridfs/. [Accessed: 09-Jun-2026].
+[6] Ultralytics, “YOLOv8 Documentation,” Ultralytics Docs. [Online]. Available: https://docs.ultralytics.com/models/yolov8/. [Accessed: 09-Jun-2026].
+[7] PaddlePaddle, “PaddleOCR Documentation,” PaddleOCR Docs. [Online]. Available: https://paddlepaddle.github.io/PaddleOCR/main/en/index.html. [Accessed: 09-Jun-2026].
+[8] OpenCV, “OpenCV Documentation,” OpenCV. [Online]. Available: https://docs.opencv.org/4.x/. [Accessed: 09-Jun-2026].
+[9] Bootstrap Team, “Bootstrap 5.3 Documentation,” Bootstrap. [Online]. Available: https://getbootstrap.com/docs/5.3/getting-started/introduction/. [Accessed: 09-Jun-2026].
+[10] Chart.js Contributors, “Chart.js Documentation,” Chart.js. [Online]. Available: https://www.chartjs.org/docs/latest/. [Accessed: 09-Jun-2026].

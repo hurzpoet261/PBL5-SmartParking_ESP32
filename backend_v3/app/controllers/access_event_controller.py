@@ -202,21 +202,21 @@ def crop_plate_roi(image: np.ndarray) -> np.ndarray:
 def crop_detected_plate(image: np.ndarray, metadata: Optional[Dict[str, Any]]) -> np.ndarray:
     """Crop YOLO-detected plate from stored GridFS metadata when available."""
     if image is None or image.size == 0 or not metadata:
-        return crop_plate_roi(image)
+        return image
 
     selected = metadata.get("selected_plate_bbox")
     if not isinstance(selected, dict):
-        return crop_plate_roi(image)
+        return image
 
     bbox = selected.get("bbox")
     if not isinstance(bbox, list) or len(bbox) != 4:
-        return crop_plate_roi(image)
+        return image
 
     height, width = image.shape[:2]
     try:
         x1, y1, x2, y2 = [int(value) for value in bbox]
     except (TypeError, ValueError):
-        return crop_plate_roi(image)
+        return image
 
     x1 = max(0, min(x1, width - 1))
     y1 = max(0, min(y1, height - 1))

@@ -29,6 +29,7 @@ function imageUrls(capture) {
     const fileId = fileIdFromCapture(capture);
     return {
         original: apiImageUrl(capture.view_url || `/api/v1/access-events/images/${fileId}`),
+        detect: `${API_BASE_URL}/access-events/debug/images/${fileId}/roi`,
         preprocess: `${API_BASE_URL}/access-events/debug/images/${fileId}/preprocess`,
         quality: `${API_BASE_URL}/access-events/debug/images/${fileId}/quality`
     };
@@ -239,6 +240,7 @@ async function loadCaptures() {
                     <div class="small">blur: <strong>${escapeHtml(blur)}</strong> ${selected} ${decision}</div>
                     <div class="btn-group btn-group-sm mt-2 w-100">
                         <button class="btn btn-outline-secondary" onclick="openCaptureModal(${index}, 'original')">Gốc</button>
+                        <button class="btn btn-outline-secondary" onclick="openCaptureModal(${index}, 'detect')">Detect</button>
                         <button class="btn btn-outline-secondary" onclick="openCaptureModal(${index}, 'preprocess')">Prep</button>
                     </div>
                 </div>

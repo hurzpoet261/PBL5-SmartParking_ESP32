@@ -54,6 +54,8 @@ reader = MFRC522(spi, Pin(config.RFID_CS_PIN, Pin.OUT), Pin(config.RFID_RST_PIN,
 
 led = Pin(config.LED_PIN, Pin.OUT)
 buzzer = Pin(config.BUZZER_PIN, Pin.OUT)
+ultrasonic_trig = Pin(config.ULTRASONIC_TRIG_PIN, Pin.OUT)
+ultrasonic_echo = Pin(config.ULTRASONIC_ECHO_PIN, Pin.IN)
 ENTRY_SERVO_PIN = getattr(config, "SERVO_ENTRY_PIN", getattr(config, "SERVO_PIN", 14))
 EXIT_SERVO_PIN = getattr(config, "SERVO_EXIT_PIN", 27)
 servo_entry = PWM(Pin(ENTRY_SERVO_PIN), freq=config.SERVO_FREQ)
@@ -162,6 +164,51 @@ def servo_angle(servo_obj, angle):
     servo_obj.duty(duty)
 
 
+def get_distance_cm():
+    if not getattr(config, "ULTRASONIC_ENABLED", True):
+        return None
+
+    try:
+        ultrasonic_trig.value(0)
+        time.sleep_us(2)
+        ultrasonic_trig.value(1)
+        time.sleep_us(10)
+        ultrasonic_trig.value(0)
+
+        timeout_us = getattr(config, "ULTRASONIC_TIMEOUT_US", 30_000)
+        wait_started = time.ticks_us()
+        while ultrasonic_echo.value() == 0:
+            if time.ticks_diff(time.ticks_us(), wait_started) > timeout_us:
+                return None
+
+        pulse_started = time.ticks_us()
+        while ultrasonic_echo.value() == 1:
+            if time.ticks_diff(time.ticks_us(), pulse_started) > timeout_us:
+                return None
+
+        duration = time.ticks_diff(time.ticks_us(), pulse_started)
+        return round((duration * 0.0343) / 2, 1)
+    except Exception as exc:
+        log("[ULTRASONIC] Read failed: {}".format(exc))
+        return None
+
+
+def is_obstacle_near():
+    distance = get_distance_cm()
+    if distance is None:
+        log("[ULTRASONIC] No valid distance reading")
+        return False
+
+    threshold = getattr(config, "ULTRASONIC_THRESHOLD_CM", 10)
+    detected = distance < threshold
+    log("[ULTRASONIC] distance={}cm threshold={}cm detected={}".format(
+        distance,
+        threshold,
+        detected,
+    ))
+    return detected
+
+
 def gate_open(command=None):
     action = normalize_gate_action(command)
     open_angle = get_gate_open_angle(action)
@@ -180,8 +227,14 @@ def gate_open(command=None):
     return action
 
 
-def gate_close(action="entry"):
+def gate_close(action="entry", force=False):
     action = normalize_gate_action({"action": action})
+    if not force and is_obstacle_near():
+        gate_open_at_ms[action] = time.ticks_ms()
+        display("{} BLOCKED".format(action.upper()), "Keep open")
+        log("[GATE] CLOSE delayed action={} because ultrasonic detects obstacle".format(action))
+        return False
+
     close_angle = get_gate_close_angle(action)
     log("[GATE] CLOSE action={} pin={} close_angle={}".format(action, get_gate_pin(action), close_angle))
     servo_angle(get_gate_servo(action), close_angle)
@@ -189,6 +242,7 @@ def gate_close(action="entry"):
     if not any_gate_open():
         led.off()
     display_ready()
+    return True
 
 
 def close_all_gates():
